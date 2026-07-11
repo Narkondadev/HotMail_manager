@@ -22,7 +22,7 @@ app.get('/api/accounts', async (req, res) => {
 app.get('/api/auth/login', async (req, res) => {
     const authCodeUrlParameters = {
         scopes: ["User.Read", "Mail.Read", "Mail.Send", "offline_access"],
-        redirectUri: "http://localhost:5001/api/auth/callback",
+        redirectUri: `${process.env.BACKEND_URL || 'http://localhost:5001'}/api/auth/callback`,
     };
     try {
         const authUrl = await cca.getAuthCodeUrl(authCodeUrlParameters);
@@ -36,7 +36,7 @@ app.get('/api/auth/callback', async (req, res) => {
     const tokenRequest = {
         code: req.query.code,
         scopes: ["User.Read", "Mail.Read", "Mail.Send", "offline_access"],
-        redirectUri: "http://localhost:5001/api/auth/callback",
+        redirectUri: `${process.env.BACKEND_URL || 'http://localhost:5001'}/api/auth/callback`,
     };
     try {
         const response = await cca.acquireTokenByCode(tokenRequest);
