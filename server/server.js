@@ -82,6 +82,51 @@ app.get('/api/emails/:email', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+// --- Search API for UI Preview ---
+app.post('/api/forward/search', async (req, res) => {
+    const { subjectQuery } = req.body;
+    if (!subjectQuery) return res.status(400).json({ error: 'Missing subjectQuery' });
+    try {
+        const accounts = await Account.find({ email: { $ne: 'global_cache' } });
+        const forwardedEmailsList = [];
+        for (const accountDoc of accounts) {
+            try {
+                const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
+                if (!msalAccount) continue;
+                const tokenResponse = await cca.acquireTokenSilent({
+                    account: msalAccount,
+                    scopes: ["User.Read", "Mail.Read", "Mail.Send", "offline_access"],
+                });
+                const searchResponse = await fetch(`https://graph.microsoft.com/v1.0/me/messages?$search="subject:${encodeURIComponent(subjectQuery)}"&$select=id,subject,body,bodyPreview,sender,receivedDateTime`, {
+                    headers: { 'Authorization': `Bearer ${tokenResponse.accessToken}`, 'ConsistencyLevel': 'eventual' }
+                });
+                if (!searchResponse.ok) continue;
+                const searchData = await searchResponse.json();
+                const matchingEmails = searchData.value;
+                for (const email of matchingEmails) {
+                    const receivedDate = new Date(email.receivedDateTime);
+                    forwardedEmailsList.push({
+                        id: email.id,
+                        accountId: accountDoc.email,
+                        account: accountDoc.email,
+                        subject: email.subject || '(No Subject)',
+                        sender: email.sender?.emailAddress?.name || email.sender?.emailAddress?.address || 'Unknown Sender',
+                        preview: email.bodyPreview || '',
+                        body: email.body?.content || 'No content',
+                        time: isNaN(receivedDate) ? '' : receivedDate.toLocaleDateString() + ' ' + receivedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    });
+                }
+            } catch (err) {
+                console.error(`Error processing account ${accountDoc.email}:`, err);
+            }
+        }
+        res.json({ matchingEmails: forwardedEmailsList });
+    } catch (error) {
+        console.error('Error in bulk search:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // --- Auto-Forwarding Rules APIs ---
 
 app.get('/api/autoforward/rules', async (req, res) => {

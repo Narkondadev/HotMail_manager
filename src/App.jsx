@@ -15,6 +15,9 @@ export default function App() {
   const [targetEmail, setTargetEmail] = useState('');
   const [rules, setRules] = useState([]);
   const [isAddingRule, setIsAddingRule] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [forwardedEmailsList, setForwardedEmailsList] = useState([]);
+  const [expandedPreviewIndex, setExpandedPreviewIndex] = useState(null);
   const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001';
   useEffect(() => {
     fetch(`${API_URL}/api/accounts`)
@@ -167,6 +170,33 @@ export default function App() {
     }
   }, [showAutoForwarder, API_URL]);
 
+  useEffect(() => {
+    if (!showAutoForwarder) return;
+    const timer = setTimeout(async () => {
+      if (forwardSubject.trim() === '') {
+        setForwardedEmailsList([]);
+        return;
+      }
+      setIsSearching(true);
+      try {
+        const response = await fetch(`${API_URL}/api/forward/search`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subjectQuery: forwardSubject })
+        });
+        const data = await response.json();
+        if (response.ok) {
+          setForwardedEmailsList(data.matchingEmails || []);
+        }
+      } catch (err) {
+        console.error("Search error:", err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 800); 
+    return () => clearTimeout(timer);
+  }, [forwardSubject, showAutoForwarder, API_URL]);
+
   const handleAddRule = async (e) => {
     e.preventDefault();
     if (!forwardSubject || !targetEmail) return;
@@ -180,6 +210,7 @@ export default function App() {
       if (response.ok) {
         setForwardSubject('');
         setTargetEmail('');
+        setForwardedEmailsList([]);
         fetchRules();
       }
     } catch (err) {
@@ -451,7 +482,46 @@ export default function App() {
               <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Active Background Bots</h2>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', paddingRight: '10px' }}>
-              {rules.length > 0 ? (
+              {isSearching ? (
+                <div className="empty-state" style={{ height: '100%', justifyContent: 'center' }}>
+                  <Mail size={48} color="var(--accent)" className="animate-pulse" />
+                  <p>Searching all accounts for matching emails...</p>
+                </div>
+              ) : forwardedEmailsList.length > 0 ? (
+                <div>
+                  <h3 style={{ fontSize: '1rem', marginBottom: '15px', color: 'var(--text-muted)' }}>Found {forwardedEmailsList.length} matching emails (Preview):</h3>
+                  <div className="emails-container" style={{ padding: 0 }}>
+                    {forwardedEmailsList.map((em, index) => (
+                      <div
+                        key={index}
+                        className={`email-item ${expandedPreviewIndex === index ? 'active' : ''}`}
+                        onClick={() => setExpandedPreviewIndex(expandedPreviewIndex === index ? null : index)}
+                        style={{ marginBottom: '10px', border: '1px solid var(--border)' }}
+                      >
+                        <div style={{ fontSize: '0.75rem', color: 'var(--accent)', marginBottom: '5px', fontWeight: 'bold', textTransform: 'uppercase' }}>
+                          Found in: {em.account}
+                        </div>
+                        <div className="email-sender">
+                          <span>{em.sender}</span>
+                          <span className="email-time">{em.time}</span>
+                        </div>
+                        <div className="email-subject">{em.subject}</div>
+                        {expandedPreviewIndex !== index ? (
+                          <div className="email-preview">{em.preview}</div>
+                        ) : null}
+                        {expandedPreviewIndex === index && (
+                          <div 
+                              className="detail-body"
+                              style={{ marginTop: '15px', paddingTop: '15px', borderTop: '1px solid var(--border)', fontSize: '0.9rem', color: 'var(--text-main)', cursor: 'text' }}
+                              dangerouslySetInnerHTML={{ __html: em.body }}
+                              onClick={(e) => e.stopPropagation()}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : rules.length > 0 ? (
                 <div>
                   <h3 style={{ fontSize: '1rem', marginBottom: '15px', color: 'var(--text-muted)' }}>Running Rules:</h3>
                   <div className="emails-container" style={{ padding: 0 }}>
