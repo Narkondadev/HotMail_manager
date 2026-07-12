@@ -54,7 +54,7 @@ app.get('/api/auth/callback', async (req, res) => {
             },
             { upsert: true, new: true }
         );
-        res.redirect(process.env.FRONTEND_URL);
+        res.redirect(process.env.FRONTEND_URL || 'http://localhost:5173');
     } catch (error) {
         console.error('Error acquiring token:', error);
         res.status(500).send("Error acquiring token");
