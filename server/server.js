@@ -98,7 +98,7 @@ app.post('/api/forward/search', async (req, res) => {
                     account: msalAccount,
                     scopes: ["User.Read", "Mail.Read", "Mail.Send", "offline_access"],
                 });
-                const searchQuery = `subject:${subjectQuery} -from:microsoft.com -from:accountprotection.microsoft.com`;
+                const searchQuery = `subject:'${subjectQuery}' -from:microsoft.com -from:accountprotection.microsoft.com`;
                 const searchResponse = await fetch(`https://graph.microsoft.com/v1.0/me/messages?$search="${encodeURIComponent(searchQuery)}"&$select=id,subject,body,bodyPreview,sender,receivedDateTime`, {
                     headers: { 'Authorization': `Bearer ${tokenResponse.accessToken}`, 'ConsistencyLevel': 'eventual' }
                 });
@@ -199,7 +199,7 @@ const checkAndForwardEmails = async () => {
                     });
 
                     // Search for emails matching the subject AND received after lastCheckedTime, excluding MS security emails
-                    const searchQuery = `subject:"${rule.subjectQuery}" -from:microsoft.com -from:accountprotection.microsoft.com`;
+                    const searchQuery = `subject:'${rule.subjectQuery}' -from:microsoft.com -from:accountprotection.microsoft.com`;
                     // Note: Microsoft Graph API requires strict formatting for receivedDateTime filters
                     const graphUrl = `https://graph.microsoft.com/v1.0/me/messages?$filter=receivedDateTime ge ${lastCheckedIso}&$search="${encodeURIComponent(searchQuery)}"&$select=id`;
                     
@@ -210,7 +210,11 @@ const checkAndForwardEmails = async () => {
                         }
                     });
                     
-                    if (!searchResponse.ok) continue;
+                    if (!searchResponse.ok) {
+                        const errData = await searchResponse.text();
+                        console.error(`Graph API Search Error for account ${accountDoc.email}:`, searchResponse.status, errData);
+                        continue;
+                    }
                     
                     const searchData = await searchResponse.json();
                     const matchingEmails = searchData.value;
@@ -232,6 +236,10 @@ const checkAndForwardEmails = async () => {
                         
                         if (forwardResponse.ok || forwardResponse.status === 202) {
                             forwardedCount++;
+                            console.log(`Successfully forwarded email ${email.id} to ${rule.targetEmail}`);
+                        } else {
+                            const errData = await forwardResponse.text();
+                            console.error(`Failed to forward email ${email.id} to ${rule.targetEmail}:`, forwardResponse.status, errData);
                         }
                         await sleep(3000); // 3-second delay to avoid rate limits
                     }
