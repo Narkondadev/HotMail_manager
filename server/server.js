@@ -199,9 +199,9 @@ const checkAndForwardEmails = async () => {
                     });
 
                     // Search for emails matching the subject AND received after lastCheckedTime, excluding MS security emails
-                    const searchQuery = `subject:'${rule.subjectQuery}' -from:microsoft.com -from:accountprotection.microsoft.com`;
-                    // Note: Microsoft Graph API requires strict formatting for receivedDateTime filters
-                    const graphUrl = `https://graph.microsoft.com/v1.0/me/messages?$filter=receivedDateTime ge ${lastCheckedIso}&$search="${encodeURIComponent(searchQuery)}"&$select=id`;
+                    const searchQuery = `subject:'${rule.subjectQuery}' -from:microsoft.com -from:accountprotection.microsoft.com received>=${lastCheckedIso}`;
+                    // Note: Microsoft Graph API does not support combining $filter and $search, so we include the date directly in the KQL $search string
+                    const graphUrl = `https://graph.microsoft.com/v1.0/me/messages?$search="${encodeURIComponent(searchQuery)}"&$select=id`;
                     
                     const searchResponse = await fetch(graphUrl, {
                         headers: { 
