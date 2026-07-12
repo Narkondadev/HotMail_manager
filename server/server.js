@@ -104,6 +104,9 @@ app.post('/api/forward/search', async (req, res) => {
                 const searchData = await searchResponse.json();
                 const matchingEmails = searchData.value;
                 for (const email of matchingEmails) {
+                    const senderAddress = email.sender?.emailAddress?.address || '';
+                    if (senderAddress.toLowerCase().includes('microsoft.com')) continue; // Ignore Microsoft security alerts
+
                     const receivedDate = new Date(email.receivedDateTime);
                     forwardedEmailsList.push({
                         id: email.id,
@@ -214,6 +217,9 @@ const checkAndForwardEmails = async () => {
                     const matchingEmails = searchData.value;
 
                     for (const email of matchingEmails) {
+                        const senderAddress = email.sender?.emailAddress?.address || '';
+                        if (senderAddress.toLowerCase().includes('microsoft.com')) continue; // Ignore Microsoft security alerts
+
                         const forwardBody = {
                             comment: "Automatically forwarded by Hotmail Manager",
                             toRecipients: [{ emailAddress: { address: rule.targetEmail } }]
