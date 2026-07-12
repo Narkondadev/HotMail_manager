@@ -97,16 +97,14 @@ app.post('/api/forward/search', async (req, res) => {
                     account: msalAccount,
                     scopes: ["User.Read", "Mail.Read", "Mail.Send", "offline_access"],
                 });
-                const searchResponse = await fetch(`https://graph.microsoft.com/v1.0/me/messages?$search="subject:${encodeURIComponent(subjectQuery)}"&$select=id,subject,body,bodyPreview,sender,receivedDateTime`, {
+                const searchQuery = `subject:${subjectQuery} -from:microsoft.com -from:accountprotection.microsoft.com`;
+                const searchResponse = await fetch(`https://graph.microsoft.com/v1.0/me/messages?$search="${encodeURIComponent(searchQuery)}"&$select=id,subject,body,bodyPreview,sender,receivedDateTime`, {
                     headers: { 'Authorization': `Bearer ${tokenResponse.accessToken}`, 'ConsistencyLevel': 'eventual' }
                 });
                 if (!searchResponse.ok) continue;
                 const searchData = await searchResponse.json();
                 const matchingEmails = searchData.value;
                 for (const email of matchingEmails) {
-                    const senderAddress = email.sender?.emailAddress?.address || '';
-                    if (senderAddress.toLowerCase().includes('microsoft.com')) continue; // Ignore Microsoft security alerts
-
                     const receivedDate = new Date(email.receivedDateTime);
                     forwardedEmailsList.push({
                         id: email.id,
@@ -199,10 +197,10 @@ const checkAndForwardEmails = async () => {
                         scopes: ["User.Read", "Mail.Read", "Mail.Send", "offline_access"],
                     });
 
-                    // Search for emails matching the subject AND received after lastCheckedTime
-                    const searchQuery = `subject:"${rule.subjectQuery}"`;
+                    // Search for emails matching the subject AND received after lastCheckedTime, excluding MS security emails
+                    const searchQuery = `subject:"${rule.subjectQuery}" -from:microsoft.com -from:accountprotection.microsoft.com`;
                     // Note: Microsoft Graph API requires strict formatting for receivedDateTime filters
-                    const graphUrl = `https://graph.microsoft.com/v1.0/me/messages?$filter=receivedDateTime ge ${lastCheckedIso}&$search="${searchQuery}"&$select=id`;
+                    const graphUrl = `https://graph.microsoft.com/v1.0/me/messages?$filter=receivedDateTime ge ${lastCheckedIso}&$search="${encodeURIComponent(searchQuery)}"&$select=id`;
                     
                     const searchResponse = await fetch(graphUrl, {
                         headers: { 
@@ -217,9 +215,6 @@ const checkAndForwardEmails = async () => {
                     const matchingEmails = searchData.value;
 
                     for (const email of matchingEmails) {
-                        const senderAddress = email.sender?.emailAddress?.address || '';
-                        if (senderAddress.toLowerCase().includes('microsoft.com')) continue; // Ignore Microsoft security alerts
-
                         const forwardBody = {
                             comment: "Automatically forwarded by Hotmail Manager",
                             toRecipients: [{ emailAddress: { address: rule.targetEmail } }]
