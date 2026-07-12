@@ -7,7 +7,7 @@ export default function App() {
   const [accountSearchQuery, setAccountSearchQuery] = useState('');
   const [emailSearchQuery, setEmailSearchQuery] = useState('');
   const [selectedEmail, setSelectedEmail] = useState(null);
-  const [emails, setEmails] = useState({}); 
+  const [emails, setEmails] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showAutoForwarder, setShowAutoForwarder] = useState(false);
@@ -105,7 +105,7 @@ export default function App() {
               preview: msg.bodyPreview || '',
               body: msg.body?.content || 'No content',
               time: receivedDate.toLocaleDateString() + ' ' + receivedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              timestamp: receivedDate.getTime(), 
+              timestamp: receivedDate.getTime(),
             };
           });
           newEmailsState[result.email] = formattedEmails;
@@ -121,10 +121,10 @@ export default function App() {
   };
   useEffect(() => {
     if (accounts.length > 0) {
-      fetchAllEmails(); 
+      fetchAllEmails();
       const intervalId = setInterval(() => {
         fetchAllEmails();
-      }, 30000); 
+      }, 30000);
       return () => clearInterval(intervalId);
     }
   }, [accounts]);
@@ -165,7 +165,7 @@ export default function App() {
   useEffect(() => {
     if (showAutoForwarder) {
       fetchRules();
-      const interval = setInterval(fetchRules, 5000); 
+      const interval = setInterval(fetchRules, 5000);
       return () => clearInterval(interval);
     }
   }, [showAutoForwarder, API_URL]);
@@ -193,7 +193,7 @@ export default function App() {
       } finally {
         setIsSearching(false);
       }
-    }, 800); 
+    }, 800);
     return () => clearTimeout(timer);
   }, [forwardSubject, showAutoForwarder, API_URL]);
 
@@ -311,7 +311,7 @@ export default function App() {
         <div className="sidebar-footer">
           <button className="add-btn" onClick={() => { setShowAutoForwarder(true); setSelectedAccount(null); setSelectedEmail(null); }} style={{ marginBottom: '10px', backgroundColor: 'var(--accent)', color: 'white' }}>
             <Send size={18} />
-            Auto-Forward Rules
+            Forward
           </button>
           <button className="add-btn" onClick={handleLogin}>
             <Plus size={18} />
@@ -323,13 +323,13 @@ export default function App() {
         {showAutoForwarder ? (
           <>
             <div className="list-header">
-              <h2 style={{ margin: 0 }}>Auto-Forwarding Bots</h2>
+              <h2 style={{ margin: 0 }}>Forward</h2>
             </div>
             <div style={{ padding: '30px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <form onSubmit={handleAddRule}>
                   <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)' }}>Subject Filter (Forward any email matching this subject)</label>
+                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)' }}>Subject Filter</label>
                     <input
                       type="text"
                       className="search-box"
@@ -358,7 +358,7 @@ export default function App() {
                     disabled={isAddingRule || !forwardSubject || !targetEmail}
                     style={{ width: '100%', display: 'flex', justifyContent: 'center', backgroundColor: (isAddingRule || !forwardSubject || !targetEmail) ? 'var(--border)' : 'var(--accent)', color: (isAddingRule || !forwardSubject || !targetEmail) ? 'var(--text-muted)' : 'white' }}
                   >
-                    {isAddingRule ? 'Adding Bot...' : 'Add Auto-Forwarding Rule'}
+                    {isAddingRule ? 'Adding...' : 'Add Forward Rule'}
                   </button>
                 </form>
               </div>
@@ -479,7 +479,7 @@ export default function App() {
           <div style={{ padding: '30px', height: '100%', display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '15px', borderBottom: '1px solid var(--border)', paddingBottom: '20px', marginBottom: '20px', flexShrink: 0 }}>
               <Send size={24} color="var(--accent)" />
-              <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Active Background Bots</h2>
+              <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Active Forwarding Emails</h2>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', paddingRight: '10px' }}>
               {isSearching ? (
@@ -510,11 +510,11 @@ export default function App() {
                           <div className="email-preview">{em.preview}</div>
                         ) : null}
                         {expandedPreviewIndex === index && (
-                          <div 
-                              className="detail-body"
-                              style={{ marginTop: '15px', paddingTop: '15px', borderTop: '1px solid var(--border)', fontSize: '0.9rem', color: 'var(--text-main)', cursor: 'text' }}
-                              dangerouslySetInnerHTML={{ __html: em.body }}
-                              onClick={(e) => e.stopPropagation()}
+                          <div
+                            className="detail-body"
+                            style={{ marginTop: '15px', paddingTop: '15px', borderTop: '1px solid var(--border)', fontSize: '0.9rem', color: 'var(--text-main)', cursor: 'text' }}
+                            dangerouslySetInnerHTML={{ __html: em.body }}
+                            onClick={(e) => e.stopPropagation()}
                           />
                         )}
                       </div>
@@ -523,28 +523,49 @@ export default function App() {
                 </div>
               ) : rules.length > 0 ? (
                 <div>
-                  <h3 style={{ fontSize: '1rem', marginBottom: '15px', color: 'var(--text-muted)' }}>Running Rules:</h3>
+                  <h3 style={{ fontSize: '1rem', marginBottom: '15px', color: 'var(--text-muted)' }}>Active Forwarding Emails:</h3>
                   <div className="emails-container" style={{ padding: 0 }}>
                     {rules.map((rule) => (
                       <div
                         key={rule._id}
                         className="email-item"
-                        style={{ marginBottom: '10px', border: '1px solid var(--border)', cursor: 'default' }}
+                        style={{ marginBottom: '15px', border: '1px solid var(--border)', borderRadius: '12px', padding: '15px', cursor: 'default', background: 'var(--bg-main)', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', transition: 'all 0.2s' }}
+                        onMouseOver={(e) => { e.currentTarget.style.transform = 'translateY(-3px)'; e.currentTarget.style.boxShadow = '0 6px 12px rgba(0,0,0,0.1)'; }}
+                        onMouseOut={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.05)'; }}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                          <div>
-                            <div style={{ fontSize: '0.75rem', color: '#10b981', marginBottom: '5px', fontWeight: 'bold', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                              <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981' }}></span>
-                              Running 24/7
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div style={{ display: 'flex', gap: '15px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', borderRadius: '50%', backgroundColor: 'rgba(16, 185, 129, 0.1)', flexShrink: 0 }}>
+                              <Mail size={16} color="#10b981" />
                             </div>
-                            <div className="email-subject">Subject: "{rule.subjectQuery}"</div>
-                            <div className="email-preview">Target: {rule.targetEmail}</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                                 <span style={{ fontSize: '0.95rem', color: 'var(--text-main)', fontWeight: '600' }}>Active Forwarding Email</span>
+                                 <span style={{ fontSize: '0.7rem', color: '#10b981', fontWeight: 'bold', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(16,185,129,0.1)', padding: '2px 8px', borderRadius: '10px' }}>
+                                   <span className="animate-pulse" style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981' }}></span>
+                                   Monitoring 24/7
+                                 </span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', fontSize: '0.9rem' }}>
+                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                   <span style={{ color: 'var(--text-muted)' }}>Subject matches:</span>
+                                   <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '2px 8px', borderRadius: '6px', fontWeight: '600', color: '#10b981' }}>"{rule.subjectQuery}"</span>
+                                 </div>
+                                 <span style={{ color: 'var(--border)' }}>→</span>
+                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                   <span style={{ color: 'var(--text-muted)' }}>Forwards to:</span>
+                                   <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '2px 8px', borderRadius: '6px', fontWeight: '600', color: '#10b981' }}>{rule.targetEmail}</span>
+                                 </div>
+                              </div>
+                            </div>
                           </div>
                           <button
                             onClick={() => handleDeleteRule(rule._id)}
-                            style={{ padding: '8px 12px', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--danger)', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: '500' }}
+                            style={{ padding: '6px 10px', backgroundColor: 'var(--bg-dark)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '500', fontSize: '0.75rem', transition: 'all 0.2s', flexShrink: 0 }}
+                            onMouseOver={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; }}
+                            onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-dark)'; }}
                           >
-                            <Trash2 size={16} /> Stop
+                            <Trash2 size={14} /> Stop
                           </button>
                         </div>
                       </div>
@@ -554,7 +575,7 @@ export default function App() {
               ) : (
                 <div className="empty-state" style={{ height: '100%', justifyContent: 'center' }}>
                   <Send size={48} color="var(--border)" />
-                  <p>No active bots. Add a rule on the left.</p>
+                  <p>No active forwarding emails. Add a rule on the left.</p>
                 </div>
               )}
             </div>
