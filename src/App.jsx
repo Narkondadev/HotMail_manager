@@ -10,14 +10,11 @@ export default function App() {
   const [emails, setEmails] = useState({}); 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [showBulkForward, setShowBulkForward] = useState(false);
+  const [showAutoForwarder, setShowAutoForwarder] = useState(false);
   const [forwardSubject, setForwardSubject] = useState('');
-  const [forwardEmail, setForwardEmail] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
-  const [isForwarding, setIsForwarding] = useState(false);
-  const [forwardResult, setForwardResult] = useState(null);
-  const [forwardedEmailsList, setForwardedEmailsList] = useState([]);
-  const [expandedPreviewIndex, setExpandedPreviewIndex] = useState(null);
+  const [targetEmail, setTargetEmail] = useState('');
+  const [rules, setRules] = useState([]);
+  const [isAddingRule, setIsAddingRule] = useState(false);
   const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001';
   useEffect(() => {
     fetch(`${API_URL}/api/accounts`)
@@ -150,55 +147,54 @@ export default function App() {
       handleSelectAccount(filteredAccounts[0]);
     }
   };
-  useEffect(() => {
-    if (!showBulkForward) return;
-    const timer = setTimeout(async () => {
-      if (forwardSubject.trim() === '') {
-        setForwardedEmailsList([]);
-        return;
-      }
-      setIsSearching(true);
-      setForwardResult(null);
-      try {
-        const response = await fetch(`${API_URL}/api/forward/search`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ subjectQuery: forwardSubject })
-        });
-        const data = await response.json();
-        if (response.ok) {
-          setForwardedEmailsList(data.matchingEmails || []);
-        }
-      } catch (err) {
-        console.error("Bulk search error:", err);
-      } finally {
-        setIsSearching(false);
-      }
-    }, 800); 
-    return () => clearTimeout(timer);
-  }, [forwardSubject, showBulkForward, API_URL]);
-  const handleBulkForward = async (e) => {
-    e.preventDefault();
-    if (!forwardSubject || !forwardEmail) return;
-    setIsForwarding(true);
-    setForwardResult(null);
+  const fetchRules = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/forward/execute`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subjectQuery: forwardSubject, targetEmail: forwardEmail })
-      });
-      const data = await response.json();
-      if (response.ok) {
-        setForwardResult({ success: true, message: `Successfully forwarded ${data.totalForwarded} emails across ${data.accountsProcessed} accounts.` });
-      } else {
-        setForwardResult({ success: false, message: data.error || 'Forwarding failed.' });
+      const res = await fetch(`${API_URL}/api/autoforward/rules`);
+      if (res.ok) {
+        const data = await res.json();
+        setRules(data);
       }
     } catch (err) {
-      console.error("Bulk forward error:", err);
-      setForwardResult({ success: false, message: 'Server connection error.' });
+      console.error("Failed to load rules", err);
+    }
+  };
+
+  useEffect(() => {
+    if (showAutoForwarder) {
+      fetchRules();
+      const interval = setInterval(fetchRules, 5000); 
+      return () => clearInterval(interval);
+    }
+  }, [showAutoForwarder, API_URL]);
+
+  const handleAddRule = async (e) => {
+    e.preventDefault();
+    if (!forwardSubject || !targetEmail) return;
+    setIsAddingRule(true);
+    try {
+      const response = await fetch(`${API_URL}/api/autoforward/rules`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subjectQuery: forwardSubject, targetEmail: targetEmail })
+      });
+      if (response.ok) {
+        setForwardSubject('');
+        setTargetEmail('');
+        fetchRules();
+      }
+    } catch (err) {
+      console.error("Add rule error:", err);
     } finally {
-      setIsForwarding(false);
+      setIsAddingRule(false);
+    }
+  };
+
+  const handleDeleteRule = async (id) => {
+    try {
+      await fetch(`${API_URL}/api/autoforward/rules/${id}`, { method: 'DELETE' });
+      fetchRules();
+    } catch (err) {
+      console.error("Delete rule error:", err);
     }
   };
   const filteredAccounts = useMemo(() => {
@@ -263,9 +259,9 @@ export default function App() {
           {filteredAccounts.map(account => (
             <div
               key={account.email}
-              className={`account-item ${selectedAccount === account.email && !showBulkForward ? 'active' : ''}`}
+              className={`account-item ${selectedAccount === account.email && !showAutoForwarder ? 'active' : ''}`}
               style={{ cursor: 'pointer' }}
-              onClick={() => { setShowBulkForward(false); handleSelectAccount(account); }}
+              onClick={() => { setShowAutoForwarder(false); handleSelectAccount(account); }}
             >
               <div className="account-info">
                 <User size={18} />
@@ -282,9 +278,9 @@ export default function App() {
           ))}
         </div>
         <div className="sidebar-footer">
-          <button className="add-btn" onClick={() => { setShowBulkForward(true); setSelectedAccount(null); setSelectedEmail(null); }} style={{ marginBottom: '10px', backgroundColor: 'var(--accent)', color: 'white' }}>
+          <button className="add-btn" onClick={() => { setShowAutoForwarder(true); setSelectedAccount(null); setSelectedEmail(null); }} style={{ marginBottom: '10px', backgroundColor: 'var(--accent)', color: 'white' }}>
             <Send size={18} />
-            Forward
+            Auto-Forward Rules
           </button>
           <button className="add-btn" onClick={handleLogin}>
             <Plus size={18} />
@@ -293,52 +289,50 @@ export default function App() {
         </div>
       </div>
       <div className="email-list-pane">
-        {showBulkForward ? (
+        {showAutoForwarder ? (
           <>
             <div className="list-header">
-              <h2 style={{ margin: 0 }}>Global Bulk Forwarding</h2>
+              <h2 style={{ margin: 0 }}>Auto-Forwarding Bots</h2>
             </div>
             <div style={{ padding: '30px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)' }}>Subject to Search</label>
-                  <input
-                    type="text"
-                    className="search-box"
-                    placeholder="e.g. Important Invoice"
-                    style={{ width: '100%', padding: '12px' }}
-                    value={forwardSubject}
-                    onChange={(e) => setForwardSubject(e.target.value)}
-                  />
-                </div>
-                <form onSubmit={handleBulkForward} style={{ marginTop: '10px', paddingTop: '20px', borderTop: '1px solid var(--border)' }}>
-                  <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)' }}>Forward to Email</label>
-                  <input
-                    type="email"
-                    className="search-box"
-                    placeholder="e.g. my-gmail@gmail.com"
-                    style={{ width: '100%', padding: '12px', marginBottom: '15px' }}
-                    value={forwardEmail}
-                    onChange={(e) => setForwardEmail(e.target.value)}
-                    required
-                  />
+                <form onSubmit={handleAddRule}>
+                  <div style={{ marginBottom: '15px' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)' }}>Subject Filter (Forward any email matching this subject)</label>
+                    <input
+                      type="text"
+                      className="search-box"
+                      placeholder="e.g. Important Invoice"
+                      style={{ width: '100%', padding: '12px' }}
+                      value={forwardSubject}
+                      onChange={(e) => setForwardSubject(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)' }}>Target Gmail Address</label>
+                    <input
+                      type="email"
+                      className="search-box"
+                      placeholder="e.g. my-gmail@gmail.com"
+                      style={{ width: '100%', padding: '12px', marginBottom: '15px' }}
+                      value={targetEmail}
+                      onChange={(e) => setTargetEmail(e.target.value)}
+                      required
+                    />
+                  </div>
                   <button
                     type="submit"
                     className="add-btn"
-                    disabled={isForwarding || isSearching || !forwardSubject || forwardedEmailsList.length === 0}
-                    style={{ width: '100%', display: 'flex', justifyContent: 'center', backgroundColor: (isForwarding || isSearching || !forwardSubject || forwardedEmailsList.length === 0) ? 'var(--border)' : 'var(--accent)', color: (isForwarding || isSearching || !forwardSubject || forwardedEmailsList.length === 0) ? 'var(--text-muted)' : 'white' }}
+                    disabled={isAddingRule || !forwardSubject || !targetEmail}
+                    style={{ width: '100%', display: 'flex', justifyContent: 'center', backgroundColor: (isAddingRule || !forwardSubject || !targetEmail) ? 'var(--border)' : 'var(--accent)', color: (isAddingRule || !forwardSubject || !targetEmail) ? 'var(--text-muted)' : 'white' }}
                   >
-                    {isSearching ? 'Searching...' : isForwarding ? 'Forwarding...' : `Forward ${forwardedEmailsList.length} Emails Now`}
+                    {isAddingRule ? 'Adding Bot...' : 'Add Auto-Forwarding Rule'}
                   </button>
                 </form>
               </div>
-              {forwardResult && (
-                <div style={{ marginTop: '20px', padding: '15px', borderRadius: '8px', backgroundColor: forwardResult.success ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', color: forwardResult.success ? '#10b981' : 'var(--danger)' }}>
-                  {forwardResult.message}
-                </div>
-              )}
               <button
-                onClick={() => setShowBulkForward(false)}
+                onClick={() => setShowAutoForwarder(false)}
                 style={{ marginTop: '30px', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
               >
                 <ArrowLeft size={18} /> Back to Accounts
@@ -450,64 +444,47 @@ export default function App() {
         )}
       </div>
       <div className="email-detail-pane">
-        {showBulkForward ? (
+        {showAutoForwarder ? (
           <div style={{ padding: '30px', height: '100%', display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '15px', borderBottom: '1px solid var(--border)', paddingBottom: '20px', marginBottom: '20px', flexShrink: 0 }}>
               <Send size={24} color="var(--accent)" />
-              <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Bulk Forwarding Report</h2>
+              <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Active Background Bots</h2>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', paddingRight: '10px' }}>
-              {isSearching ? (
-                <div className="empty-state" style={{ height: '100%', justifyContent: 'center' }}>
-                  <Mail size={48} color="var(--accent)" className="animate-pulse" />
-                </div>
-              ) : isForwarding ? (
-                <div className="empty-state" style={{ height: '100%', justifyContent: 'center' }}>
-                  <Send size={48} color="var(--accent)" className="animate-pulse" />
-                </div>
-              ) : forwardedEmailsList.length > 0 ? (
+              {rules.length > 0 ? (
                 <div>
-                  <h3 style={{ fontSize: '1rem', marginBottom: '15px' }}>{forwardResult?.success ? 'Emails Forwarded:' : 'Emails Found (Preview):'}</h3>
+                  <h3 style={{ fontSize: '1rem', marginBottom: '15px', color: 'var(--text-muted)' }}>Running Rules:</h3>
                   <div className="emails-container" style={{ padding: 0 }}>
-                    {forwardedEmailsList.map((em, index) => (
+                    {rules.map((rule) => (
                       <div
-                        key={index}
-                        className={`email-item ${expandedPreviewIndex === index ? 'active' : ''}`}
-                        onClick={() => setExpandedPreviewIndex(expandedPreviewIndex === index ? null : index)}
-                        style={{ marginBottom: '10px', border: '1px solid var(--border)' }}
+                        key={rule._id}
+                        className="email-item"
+                        style={{ marginBottom: '10px', border: '1px solid var(--border)', cursor: 'default' }}
                       >
-                        <div style={{ fontSize: '0.75rem', color: 'var(--accent)', marginBottom: '5px', fontWeight: 'bold', textTransform: 'uppercase' }}>
-                          Found in: {em.account}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                          <div>
+                            <div style={{ fontSize: '0.75rem', color: '#10b981', marginBottom: '5px', fontWeight: 'bold', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                              <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981' }}></span>
+                              Running 24/7
+                            </div>
+                            <div className="email-subject">Subject: "{rule.subjectQuery}"</div>
+                            <div className="email-preview">Target: {rule.targetEmail}</div>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteRule(rule._id)}
+                            style={{ padding: '8px 12px', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--danger)', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: '500' }}
+                          >
+                            <Trash2 size={16} /> Stop
+                          </button>
                         </div>
-                        <div className="email-sender">
-                          <span>{em.sender}</span>
-                          <span className="email-time">{em.time}</span>
-                        </div>
-                        <div className="email-subject">{em.subject}</div>
-                        {expandedPreviewIndex !== index ? (
-                          <div className="email-preview">{em.preview}</div>
-                        ) : null}
-                        {expandedPreviewIndex === index && (
-                          <div 
-                              className="detail-body"
-                              style={{ marginTop: '15px', paddingTop: '15px', borderTop: '1px solid var(--border)', fontSize: '0.9rem', color: 'var(--text-main)', cursor: 'text' }}
-                              dangerouslySetInnerHTML={{ __html: em.body }}
-                              onClick={(e) => e.stopPropagation()}
-                          />
-                        )}
                       </div>
                     ))}
                   </div>
                 </div>
-              ) : forwardSubject && forwardSubject.trim() !== '' ? (
-                <div className="empty-state" style={{ height: '100%', justifyContent: 'center' }}>
-                  <Mail size={48} color="var(--border)" />
-                  <p>No emails found</p>
-                </div>
               ) : (
                 <div className="empty-state" style={{ height: '100%', justifyContent: 'center' }}>
                   <Send size={48} color="var(--border)" />
-                  <p>Enter a subject to search</p>
+                  <p>No active bots. Add a rule on the left.</p>
                 </div>
               )}
             </div>
@@ -533,10 +510,10 @@ export default function App() {
               dangerouslySetInnerHTML={{ __html: selectedEmail.body }}
             />
           </>
-        ) : showBulkForward ? (
+        ) : showAutoForwarder ? (
           <div className="empty-state">
             <Send size={48} strokeWidth={1} color="var(--accent)" />
-            <p>Select a forwarded email from the report to read it</p>
+            <p>Bots are running continuously in the background</p>
           </div>
         ) : (
           <div className="empty-state">
