@@ -257,8 +257,8 @@ const checkAndForwardEmails = async () => {
     }
 };
 
-// Run the loop every 2 minutes (120,000 milliseconds)
-setInterval(checkAndForwardEmails, 120000);
+// Run immediately after 5 seconds, then every 30 seconds
+setInterval(checkAndForwardEmails, 30000);
 // Also run it once immediately on startup after 5 seconds
 setTimeout(checkAndForwardEmails, 5000);
 app.delete('/api/accounts/:email', async (req, res) => {
