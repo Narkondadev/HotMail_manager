@@ -1,6 +1,7 @@
 const msal = require('@azure/msal-node');
 const Account = require('./models/Account');
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const cachePlugin = {
     beforeCacheAccess: async (cacheContext) => {
         try {
