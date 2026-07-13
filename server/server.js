@@ -278,7 +278,6 @@ const checkAndForwardEmails = async () => {
 
                     for (const email of matchingEmails) {
                         const forwardBody = {
-                            comment: "Automatically forwarded by Hotmail Manager",
                             toRecipients: [{ emailAddress: { address: rule.targetEmail } }]
                         };
                         
