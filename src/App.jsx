@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Mail, Search, Plus, Trash2, User, LogOut, ArrowLeft, Send, AlertCircle } from 'lucide-react';
+import { Mail, Search, Plus, Trash2, User, LogOut, ArrowLeft, Send, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
 import './index.css';
 export default function App() {
   const [accounts, setAccounts] = useState([]);
@@ -566,12 +566,12 @@ export default function App() {
                                     Monitoring 24/7
                                   </span>
                                   {rule.forwardCount > 0 ? (
-                                    <span style={{ backgroundColor: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', padding: '4px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }} title={`Last forwarded at: ${new Date(rule.lastForwardedAt).toLocaleString()}`}>
-                                      ✅ Complete ({rule.forwardCount} forwarded)
+                                    <span style={{ backgroundColor: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', padding: '4px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }} title={`Last forwarded at: ${new Date(rule.lastForwardedAt).toLocaleString()} (${rule.forwardCount} forwarded)`}>
+                                      <CheckCircle2 size={12} /> Complete
                                     </span>
                                   ) : (
                                     <span style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', padding: '4px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                      ⏳ Pending (Listening...)
+                                      <Clock size={12} /> Pending
                                     </span>
                                   )}
                                  </div>
