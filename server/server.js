@@ -35,7 +35,7 @@ app.get('/api/accounts', async (req, res) => {
 });
 app.get('/api/auth/login', async (req, res) => {
     const authCodeUrlParameters = {
-        scopes: ["User.Read", "Mail.Read", "Mail.Send", "offline_access"],
+        scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
         redirectUri: `${process.env.BACKEND_URL || 'http://localhost:5001'}/api/auth/callback`,
     };
     try {
@@ -49,7 +49,7 @@ app.get('/api/auth/login', async (req, res) => {
 app.get('/api/auth/callback', async (req, res) => {
     const tokenRequest = {
         code: req.query.code,
-        scopes: ["User.Read", "Mail.Read", "Mail.Send", "offline_access"],
+        scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
         redirectUri: `${process.env.BACKEND_URL || 'http://localhost:5001'}/api/auth/callback`,
     };
     try {
@@ -88,7 +88,7 @@ app.get('/api/emails/:email', async (req, res) => {
             if (msalAccount) {
                 const tokenResponse = await cca.acquireTokenSilent({
                     account: msalAccount,
-                    scopes: ["User.Read", "Mail.Read", "Mail.Send", "offline_access"],
+                    scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
                 });
                 accessToken = tokenResponse.accessToken;
             }
@@ -135,7 +135,7 @@ app.post('/api/forward/search', async (req, res) => {
                 if (!msalAccount) continue;
                 const tokenResponse = await cca.acquireTokenSilent({
                     account: msalAccount,
-                    scopes: ["User.Read", "Mail.Read", "Mail.Send", "offline_access"],
+                    scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
                 });
                 const searchQuery = `subject:'${subjectQuery}' -from:microsoft.com -from:accountprotection.microsoft.com`;
                 const searchResponse = await fetch(`https://graph.microsoft.com/v1.0/me/messages?$search="${encodeURIComponent(searchQuery)}"&$select=id,subject,body,bodyPreview,sender,receivedDateTime`, {
@@ -185,11 +185,58 @@ app.post('/api/autoforward/rules', async (req, res) => {
         return res.status(400).json({ error: 'Missing subjectQuery or targetEmail' });
     }
     try {
-        // Initialize lastCheckedTime to RIGHT NOW so only NEW emails after this moment get forwarded
+        await warmUpCache();
+        const accounts = await Account.find({ email: { $ne: 'global_cache' } });
+        const graphRuleIds = {};
+
+        for (const accountDoc of accounts) {
+            try {
+                const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
+                if (!msalAccount) continue;
+                const tokenResponse = await cca.acquireTokenSilent({
+                    account: msalAccount,
+                    scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
+                });
+
+                const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messageRules`;
+                const ruleBody = {
+                    displayName: `Forward_to_${targetEmail}`,
+                    sequence: 1,
+                    isEnabled: true,
+                    conditions: {
+                        subjectContains: [subjectQuery]
+                    },
+                    actions: {
+                        forwardTo: [{ emailAddress: { address: targetEmail } }]
+                    }
+                };
+
+                const response = await fetch(graphUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${tokenResponse.accessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(ruleBody)
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    graphRuleIds[accountDoc.email] = data.id;
+                    console.log(`Created Native Rule ${data.id} for ${accountDoc.email}`);
+                } else {
+                    const errText = await response.text();
+                    console.error(`Failed to create Native Rule for ${accountDoc.email}:`, response.status, errText);
+                }
+            } catch (err) {
+                console.error(`Error processing rule creation for ${accountDoc.email}:`, err);
+            }
+        }
+
         const newRule = new Rule({
             subjectQuery,
             targetEmail,
-            lastCheckedTime: new Date()
+            graphRuleIds
         });
         await newRule.save();
         res.json(newRule);
@@ -200,6 +247,43 @@ app.post('/api/autoforward/rules', async (req, res) => {
 
 app.delete('/api/autoforward/rules/:id', async (req, res) => {
     try {
+        const rule = await Rule.findById(req.params.id);
+        if (!rule) return res.status(404).json({ error: 'Rule not found' });
+
+        await warmUpCache();
+        const accounts = await Account.find({ email: { $ne: 'global_cache' } });
+
+        // Iterate through graphRuleIds and delete them natively
+        if (rule.graphRuleIds && rule.graphRuleIds.size > 0) {
+            for (const [accountEmail, graphRuleId] of rule.graphRuleIds.entries()) {
+                const accountDoc = accounts.find(a => a.email === accountEmail);
+                if (!accountDoc) continue;
+
+                try {
+                    const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
+                    if (!msalAccount) continue;
+                    const tokenResponse = await cca.acquireTokenSilent({
+                        account: msalAccount,
+                        scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
+                    });
+
+                    const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messageRules/${graphRuleId}`;
+                    const response = await fetch(graphUrl, {
+                        method: 'DELETE',
+                        headers: { 'Authorization': `Bearer ${tokenResponse.accessToken}` }
+                    });
+
+                    if (response.ok || response.status === 204) {
+                        console.log(`Deleted Native Rule ${graphRuleId} for ${accountEmail}`);
+                    } else {
+                        console.error(`Failed to delete Native Rule for ${accountEmail}:`, response.status);
+                    }
+                } catch (err) {
+                    console.error(`Error deleting native rule for ${accountEmail}:`, err);
+                }
+            }
+        }
+
         await Rule.findByIdAndDelete(req.params.id);
         res.json({ message: 'Rule deleted successfully' });
     } catch (error) {
@@ -207,135 +291,7 @@ app.delete('/api/autoforward/rules/:id', async (req, res) => {
     }
 });
 
-// --- Background Polling Loop for Auto-Forwarding ---
 
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-const checkAndForwardEmails = async () => {
-    try {
-        const rules = await Rule.find();
-        if (rules.length === 0) return; // No active rules, do nothing
-
-        // Always warm up MSAL cache from MongoDB before doing any token operations
-        await warmUpCache();
-
-        const accounts = await Account.find({ email: { $ne: 'global_cache' } });
-        if (accounts.length === 0) return;
-
-        // Iterate through all active rules
-        for (const rule of rules) {
-            const currentCheckStartTime = new Date();
-            
-            // Format the lastCheckedTime for Microsoft Graph API (ISO 8601)
-            const lastCheckedIso = rule.lastCheckedTime.toISOString();
-            
-            let forwardedCount = 0;
-
-            for (const accountDoc of accounts) {
-                try {
-                    const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
-                    if (!msalAccount) {
-                        if (accountDoc.status !== 'blocked') {
-                            accountDoc.status = 'blocked';
-                            await accountDoc.save();
-                        }
-                        continue;
-                    }
-                    
-                    const tokenResponse = await cca.acquireTokenSilent({
-                        account: msalAccount,
-                        scopes: ["User.Read", "Mail.Read", "Mail.Send", "offline_access"],
-                    });
-                    
-                    let hasBlockError = false;
-
-                    // Search ONLY the Inbox folder so it doesn't loop on its own 'Sent Items'
-                    const searchQuery = `subject:'${rule.subjectQuery}' -from:microsoft.com -from:accountprotection.microsoft.com received>=${lastCheckedIso}`;
-                    const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$search="${encodeURIComponent(searchQuery)}"&$select=id`;
-                    
-                    const searchResponse = await fetch(graphUrl, {
-                        headers: { 
-                            'Authorization': `Bearer ${tokenResponse.accessToken}`,
-                            'ConsistencyLevel': 'eventual'
-                        }
-                    });
-                    
-                    if (!searchResponse.ok) {
-                        const errData = await searchResponse.text();
-                        console.error(`Graph API Search Error for account ${accountDoc.email}:`, searchResponse.status, errData);
-                        if (searchResponse.status === 403 || searchResponse.status === 401 || searchResponse.status === 429) {
-                            hasBlockError = true;
-                            if (accountDoc.status !== 'blocked') {
-                                accountDoc.status = 'blocked';
-                                await accountDoc.save();
-                            }
-                        }
-                        continue;
-                    }
-                    
-                    const searchData = await searchResponse.json();
-                    const matchingEmails = searchData.value;
-
-                    for (const email of matchingEmails) {
-                        const forwardBody = {
-                            toRecipients: [{ emailAddress: { address: rule.targetEmail } }]
-                        };
-                        
-                        const forwardResponse = await fetch(`https://graph.microsoft.com/v1.0/me/messages/${email.id}/forward`, {
-                            method: 'POST',
-                            headers: {
-                                'Authorization': `Bearer ${tokenResponse.accessToken}`,
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify(forwardBody)
-                        });
-                        
-                        if (forwardResponse.ok || forwardResponse.status === 202) {
-                            forwardedCount++;
-                            rule.forwardCount = (rule.forwardCount || 0) + 1;
-                            rule.lastForwardedAt = new Date();
-                            console.log(`Successfully forwarded email ${email.id} to ${rule.targetEmail}`);
-                        } else {
-                            const errData = await forwardResponse.text();
-                            console.error(`Failed to forward email ${email.id} to ${rule.targetEmail}:`, forwardResponse.status, errData);
-                            if (forwardResponse.status === 403 || forwardResponse.status === 401 || forwardResponse.status === 429) {
-                                hasBlockError = true;
-                                if (accountDoc.status !== 'blocked') {
-                                    accountDoc.status = 'blocked';
-                                    await accountDoc.save();
-                                }
-                                break; // Stop trying to forward if account is blocked
-                            }
-                        }
-                        await sleep(3000); // 3-second delay to avoid rate limits
-                    }
-                    // If we made it here without throwing, the account is healthy
-                    if (!hasBlockError && accountDoc.status === 'blocked') {
-                        accountDoc.status = 'active';
-                        await accountDoc.save();
-                    }
-                } catch (err) {
-                    console.error(`Error auto-forwarding for account ${accountDoc.email}:`, err);
-                    if (accountDoc.status !== 'blocked') {
-                        accountDoc.status = 'blocked';
-                        await accountDoc.save();
-                    }
-                }
-            }
-
-            // Update the rule's lastCheckedTime so we don't process these emails again
-            rule.lastCheckedTime = currentCheckStartTime;
-            await rule.save();
-        }
-    } catch (error) {
-        console.error('Error in background auto-forward loop:', error);
-    }
-};
-
-// Run immediately after 5 seconds, then every 30 seconds
-setInterval(checkAndForwardEmails, 30000);
-// Also run it once immediately on startup after 5 seconds
-setTimeout(checkAndForwardEmails, 5000);
 app.delete('/api/accounts/:email', async (req, res) => {
     try {
         await Account.findOneAndDelete({ email: req.params.email });
