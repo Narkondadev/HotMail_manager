@@ -552,7 +552,11 @@ export default function App() {
                     ))}
                   </div>
                 </div>
-              ) : null}
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '16px', opacity: 0.35 }}>
+                  <Send size={56} color="var(--accent)" className="animate-pulse" />
+                </div>
+              )}
             </div>
           </div>
         ) : selectedEmail ? (
