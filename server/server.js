@@ -207,6 +207,8 @@ const checkAndForwardEmails = async () => {
                         account: msalAccount,
                         scopes: ["User.Read", "Mail.Read", "Mail.Send", "offline_access"],
                     });
+                    
+                    let hasBlockError = false;
 
                     // Search ONLY the Inbox folder so it doesn't loop on its own 'Sent Items'
                     const searchQuery = `subject:'${rule.subjectQuery}' -from:microsoft.com -from:accountprotection.microsoft.com received>=${lastCheckedIso}`;
@@ -223,6 +225,7 @@ const checkAndForwardEmails = async () => {
                         const errData = await searchResponse.text();
                         console.error(`Graph API Search Error for account ${accountDoc.email}:`, searchResponse.status, errData);
                         if (searchResponse.status === 403 || searchResponse.status === 401 || searchResponse.status === 429) {
+                            hasBlockError = true;
                             if (accountDoc.status !== 'blocked') {
                                 accountDoc.status = 'blocked';
                                 await accountDoc.save();
@@ -258,16 +261,18 @@ const checkAndForwardEmails = async () => {
                             const errData = await forwardResponse.text();
                             console.error(`Failed to forward email ${email.id} to ${rule.targetEmail}:`, forwardResponse.status, errData);
                             if (forwardResponse.status === 403 || forwardResponse.status === 401 || forwardResponse.status === 429) {
+                                hasBlockError = true;
                                 if (accountDoc.status !== 'blocked') {
                                     accountDoc.status = 'blocked';
                                     await accountDoc.save();
                                 }
+                                break; // Stop trying to forward if account is blocked
                             }
                         }
                         await sleep(3000); // 3-second delay to avoid rate limits
                     }
                     // If we made it here without throwing, the account is healthy
-                    if (accountDoc.status === 'blocked') {
+                    if (!hasBlockError && accountDoc.status === 'blocked') {
                         accountDoc.status = 'active';
                         await accountDoc.save();
                     }
