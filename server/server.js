@@ -222,7 +222,7 @@ const checkAndForwardEmails = async () => {
                     if (!searchResponse.ok) {
                         const errData = await searchResponse.text();
                         console.error(`Graph API Search Error for account ${accountDoc.email}:`, searchResponse.status, errData);
-                        if (searchResponse.status === 403 || searchResponse.status === 401) {
+                        if (searchResponse.status === 403 || searchResponse.status === 401 || searchResponse.status === 429) {
                             if (accountDoc.status !== 'blocked') {
                                 accountDoc.status = 'blocked';
                                 await accountDoc.save();
@@ -257,7 +257,7 @@ const checkAndForwardEmails = async () => {
                         } else {
                             const errData = await forwardResponse.text();
                             console.error(`Failed to forward email ${email.id} to ${rule.targetEmail}:`, forwardResponse.status, errData);
-                            if (forwardResponse.status === 403 || forwardResponse.status === 401) {
+                            if (forwardResponse.status === 403 || forwardResponse.status === 401 || forwardResponse.status === 429) {
                                 if (accountDoc.status !== 'blocked') {
                                     accountDoc.status = 'blocked';
                                     await accountDoc.save();
