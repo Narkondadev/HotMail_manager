@@ -18,7 +18,8 @@ export default function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [forwardedEmailsList, setForwardedEmailsList] = useState([]);
   const [expandedPreviewIndex, setExpandedPreviewIndex] = useState(null);
-  const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001';
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  const API_URL = isLocalhost ? 'http://localhost:5001' : 'https://hotmail-manager-ppna.onrender.com';
   useEffect(() => {
     fetch(`${API_URL}/api/accounts`)
       .then(res => res.json())
