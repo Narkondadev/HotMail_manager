@@ -107,7 +107,7 @@ app.get('/api/emails/:email', async (req, res) => {
         }
 
         // Only fetch emails from the Inbox folder, excluding Sent Items and Drafts
-        const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=50&$select=sender,subject,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime DESC`;
+        const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=12&$select=sender,subject,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime DESC`;
         const graphResponse = await fetch(graphUrl, {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
@@ -185,12 +185,11 @@ app.post('/api/autoforward/rules', async (req, res) => {
         return res.status(400).json({ error: 'Missing subjectQuery or targetEmail' });
     }
     try {
-        // Initialize lastCheckedTime to 24 hours ago so it immediately catches recent existing emails
-        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        // Initialize lastCheckedTime to RIGHT NOW so only NEW emails after this moment get forwarded
         const newRule = new Rule({
             subjectQuery,
             targetEmail,
-            lastCheckedTime: twentyFourHoursAgo
+            lastCheckedTime: new Date()
         });
         await newRule.save();
         res.json(newRule);
