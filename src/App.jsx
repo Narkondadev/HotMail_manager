@@ -298,8 +298,10 @@ export default function App() {
               <div className="account-info">
                 <User size={18} />
                 <span className="account-email" title={account.email}>{account.email}</span>
-                {account.status === 'blocked' && (
+                {account.status === 'blocked' ? (
                   <AlertCircle size={14} color="var(--error)" style={{ marginLeft: '4px' }} title="Account locked or requires re-authentication" />
+                ) : (
+                  <div style={{ width: '8px', height: '8px', backgroundColor: '#10b981', borderRadius: '50%', marginLeft: '4px' }} title="Account Active and Healthy"></div>
                 )}
               </div>
               <button
