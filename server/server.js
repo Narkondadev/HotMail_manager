@@ -70,7 +70,9 @@ app.get('/api/emails/:email', async (req, res) => {
             account: msalAccount,
             scopes: ["User.Read", "Mail.Read", "Mail.Send", "offline_access"],
         });
-        const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/messages?$select=sender,subject,bodyPreview,body,receivedDateTime&$orderby=receivedDateTime DESC&$top=50', {
+        // Only fetch emails from the Inbox folder, excluding Sent Items and Drafts
+        const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=50&$select=subject,from,receivedDateTime,bodyPreview&$orderby=receivedDateTime DESC`;
+        const graphResponse = await fetch(graphUrl, {
             headers: { 'Authorization': `Bearer ${tokenResponse.accessToken}` }
         });
         if (!graphResponse.ok) {
@@ -200,10 +202,9 @@ const checkAndForwardEmails = async () => {
                         scopes: ["User.Read", "Mail.Read", "Mail.Send", "offline_access"],
                     });
 
-                    // Search for emails matching the subject AND received after lastCheckedTime, excluding MS security emails
+                    // Search ONLY the Inbox folder so it doesn't loop on its own 'Sent Items'
                     const searchQuery = `subject:'${rule.subjectQuery}' -from:microsoft.com -from:accountprotection.microsoft.com received>=${lastCheckedIso}`;
-                    // Note: Microsoft Graph API does not support combining $filter and $search, so we include the date directly in the KQL $search string
-                    const graphUrl = `https://graph.microsoft.com/v1.0/me/messages?$search="${encodeURIComponent(searchQuery)}"&$select=id`;
+                    const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$search="${encodeURIComponent(searchQuery)}"&$select=id`;
                     
                     const searchResponse = await fetch(graphUrl, {
                         headers: { 
