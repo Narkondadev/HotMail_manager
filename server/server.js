@@ -251,6 +251,8 @@ const checkAndForwardEmails = async () => {
                         
                         if (forwardResponse.ok || forwardResponse.status === 202) {
                             forwardedCount++;
+                            rule.forwardCount = (rule.forwardCount || 0) + 1;
+                            rule.lastForwardedAt = new Date();
                             console.log(`Successfully forwarded email ${email.id} to ${rule.targetEmail}`);
                         } else {
                             const errData = await forwardResponse.text();

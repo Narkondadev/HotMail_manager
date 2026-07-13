@@ -559,6 +559,19 @@ export default function App() {
                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                    <span style={{ color: 'var(--text-muted)' }}>Forwards to:</span>
                                    <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '2px 8px', borderRadius: '6px', fontWeight: '600', color: '#10b981' }}>{rule.targetEmail}</span>
+                                   <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '4px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <div style={{ width: '6px', height: '6px', backgroundColor: '#10b981', borderRadius: '50%' }}></div>
+                                    Monitoring 24/7
+                                  </span>
+                                  {rule.forwardCount > 0 ? (
+                                    <span style={{ backgroundColor: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', padding: '4px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }} title={`Last forwarded at: ${new Date(rule.lastForwardedAt).toLocaleString()}`}>
+                                      ✅ Complete ({rule.forwardCount} forwarded)
+                                    </span>
+                                  ) : (
+                                    <span style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', padding: '4px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      ⏳ Pending (Listening...)
+                                    </span>
+                                  )}
                                  </div>
                               </div>
                             </div>
