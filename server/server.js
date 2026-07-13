@@ -71,7 +71,7 @@ app.get('/api/emails/:email', async (req, res) => {
             scopes: ["User.Read", "Mail.Read", "Mail.Send", "offline_access"],
         });
         // Only fetch emails from the Inbox folder, excluding Sent Items and Drafts
-        const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=50&$select=subject,from,receivedDateTime,bodyPreview&$orderby=receivedDateTime DESC`;
+        const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=50&$select=sender,subject,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime DESC`;
         const graphResponse = await fetch(graphUrl, {
             headers: { 'Authorization': `Bearer ${tokenResponse.accessToken}` }
         });
