@@ -14,6 +14,18 @@ mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('Connected to MongoDB'))
   .catch(err => console.error('MongoDB connection error:', err));
 
+// Admin Login Endpoint
+app.post('/api/admin/login', (req, res) => {
+    const { password } = req.body;
+    const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123';
+    
+    if (password === adminPassword) {
+        res.json({ success: true });
+    } else {
+        res.status(401).json({ error: 'Invalid password' });
+    }
+});
+
 // Force MSAL to load its token cache from MongoDB before any token operation
 const warmUpCache = async () => {
     try {

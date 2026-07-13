@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Mail, Search, Plus, Trash2, User, LogOut, ArrowLeft, Send, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
+import { Mail, Search, Plus, Trash2, User, LogOut, ArrowLeft, Send, AlertCircle, CheckCircle2, Clock, Lock, KeyRound } from 'lucide-react';
 import './index.css';
 export default function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(localStorage.getItem('isLoggedIn') === 'true');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [accounts, setAccounts] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [accountSearchQuery, setAccountSearchQuery] = useState('');
@@ -21,6 +25,7 @@ export default function App() {
   const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   const API_URL = isLocalhost ? 'http://localhost:5001' : 'https://hotmail-manager-ppna.onrender.com';
   useEffect(() => {
+    if (!isLoggedIn) return;
     fetch(`${API_URL}/api/accounts`)
       .then(res => res.json())
       .then(data => setAccounts(data))
@@ -255,6 +260,66 @@ export default function App() {
         email.preview.toLowerCase().includes(query)
     );
   }, [currentAccountEmails, emailSearchQuery]);
+  const handleAdminLogin = async (e) => {
+    e.preventDefault();
+    setIsLoggingIn(true);
+    setLoginError('');
+    try {
+      const res = await fetch(`${API_URL}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: loginPassword })
+      });
+      if (res.ok) {
+        localStorage.setItem('isLoggedIn', 'true');
+        setIsLoggedIn(true);
+      } else {
+        setLoginError('Incorrect password');
+      }
+    } catch (err) {
+      setLoginError('Server error, try again later');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  if (!isLoggedIn) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'linear-gradient(135deg, var(--bg-main) 0%, #f1f5f9 100%)' }}>
+        <div style={{ background: '#fff', padding: '40px', borderRadius: '16px', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', width: '100%', maxWidth: '400px', textAlign: 'center', border: '1px solid var(--border)' }}>
+          <div style={{ width: '64px', height: '64px', backgroundColor: 'rgba(16, 185, 129, 0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+            <Lock size={32} color="var(--accent)" />
+          </div>
+          <h1 style={{ fontSize: '1.5rem', marginBottom: '10px', color: 'var(--text-main)', fontWeight: '700' }}>Admin Login</h1>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '30px', fontSize: '0.9rem' }}>Please enter the password to access the dashboard.</p>
+          
+          <form onSubmit={handleAdminLogin}>
+            <div style={{ position: 'relative', marginBottom: '20px' }}>
+              <KeyRound size={20} color="var(--text-muted)" style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)' }} />
+              <input
+                type="password"
+                placeholder="Enter password"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                style={{ width: '100%', padding: '12px 12px 12px 45px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '1rem', outline: 'none', transition: 'border-color 0.2s', backgroundColor: 'var(--bg-main)' }}
+                autoFocus
+              />
+            </div>
+            {loginError && <div style={{ color: 'var(--danger)', fontSize: '0.85rem', marginBottom: '20px' }}>{loginError}</div>}
+            
+            <button
+              type="submit"
+              disabled={isLoggingIn || !loginPassword}
+              style={{ width: '100%', padding: '14px', backgroundColor: 'var(--accent)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '1rem', fontWeight: '600', cursor: isLoggingIn || !loginPassword ? 'not-allowed' : 'pointer', opacity: isLoggingIn || !loginPassword ? 0.7 : 1, transition: 'all 0.2s' }}
+            >
+              {isLoggingIn ? 'Verifying...' : 'Access Dashboard'}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app-container">
       <div className="sidebar">
