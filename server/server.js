@@ -195,7 +195,13 @@ const checkAndForwardEmails = async () => {
             for (const accountDoc of accounts) {
                 try {
                     const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
-                    if (!msalAccount) continue;
+                    if (!msalAccount) {
+                        if (accountDoc.status !== 'blocked') {
+                            accountDoc.status = 'blocked';
+                            await accountDoc.save();
+                        }
+                        continue;
+                    }
                     
                     const tokenResponse = await cca.acquireTokenSilent({
                         account: msalAccount,
@@ -216,6 +222,12 @@ const checkAndForwardEmails = async () => {
                     if (!searchResponse.ok) {
                         const errData = await searchResponse.text();
                         console.error(`Graph API Search Error for account ${accountDoc.email}:`, searchResponse.status, errData);
+                        if (searchResponse.status === 403 || searchResponse.status === 401) {
+                            if (accountDoc.status !== 'blocked') {
+                                accountDoc.status = 'blocked';
+                                await accountDoc.save();
+                            }
+                        }
                         continue;
                     }
                     
@@ -243,11 +255,26 @@ const checkAndForwardEmails = async () => {
                         } else {
                             const errData = await forwardResponse.text();
                             console.error(`Failed to forward email ${email.id} to ${rule.targetEmail}:`, forwardResponse.status, errData);
+                            if (forwardResponse.status === 403 || forwardResponse.status === 401) {
+                                if (accountDoc.status !== 'blocked') {
+                                    accountDoc.status = 'blocked';
+                                    await accountDoc.save();
+                                }
+                            }
                         }
                         await sleep(3000); // 3-second delay to avoid rate limits
                     }
+                    // If we made it here without throwing, the account is healthy
+                    if (accountDoc.status === 'blocked') {
+                        accountDoc.status = 'active';
+                        await accountDoc.save();
+                    }
                 } catch (err) {
                     console.error(`Error auto-forwarding for account ${accountDoc.email}:`, err);
+                    if (accountDoc.status !== 'blocked') {
+                        accountDoc.status = 'blocked';
+                        await accountDoc.save();
+                    }
                 }
             }
 

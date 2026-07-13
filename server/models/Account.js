@@ -20,6 +20,11 @@ const accountSchema = new mongoose.Schema({
     accessToken: {
         type: String, 
         required: false
+    },
+    status: {
+        type: String,
+        enum: ['active', 'blocked', 'error'],
+        default: 'active'
     }
 }, { timestamps: true });
 module.exports = mongoose.model('Account', accountSchema);

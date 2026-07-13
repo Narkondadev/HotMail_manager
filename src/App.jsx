@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Mail, Search, Plus, Trash2, User, LogOut, ArrowLeft, Send } from 'lucide-react';
+import { Mail, Search, Plus, Trash2, User, LogOut, ArrowLeft, Send, AlertCircle } from 'lucide-react';
 import './index.css';
 export default function App() {
   const [accounts, setAccounts] = useState([]);
@@ -298,6 +298,9 @@ export default function App() {
               <div className="account-info">
                 <User size={18} />
                 <span className="account-email" title={account.email}>{account.email}</span>
+                {account.status === 'blocked' && (
+                  <AlertCircle size={14} color="var(--error)" style={{ marginLeft: '4px' }} title="Account locked or requires re-authentication" />
+                )}
               </div>
               <button
                 className="remove-btn"
