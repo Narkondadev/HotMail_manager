@@ -146,10 +146,12 @@ app.post('/api/autoforward/rules', async (req, res) => {
         return res.status(400).json({ error: 'Missing subjectQuery or targetEmail' });
     }
     try {
+        // Initialize lastCheckedTime to 24 hours ago so it immediately catches recent existing emails
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
         const newRule = new Rule({
             subjectQuery,
             targetEmail,
-            lastCheckedTime: new Date()
+            lastCheckedTime: twentyFourHoursAgo
         });
         await newRule.save();
         res.json(newRule);
