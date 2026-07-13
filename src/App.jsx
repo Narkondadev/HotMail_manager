@@ -488,46 +488,7 @@ export default function App() {
               <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Active Forwarding Emails</h2>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', paddingRight: '10px' }}>
-              {isSearching ? (
-                <div className="empty-state" style={{ height: '100%', justifyContent: 'center' }}>
-                  <Mail size={48} color="var(--accent)" className="animate-pulse" />
-                  <p>Searching all accounts for matching emails...</p>
-                </div>
-              ) : forwardedEmailsList.length > 0 ? (
-                <div>
-                  <h3 style={{ fontSize: '1rem', marginBottom: '15px', color: 'var(--text-muted)' }}>Found {forwardedEmailsList.length} matching emails (Preview):</h3>
-                  <div className="emails-container" style={{ padding: 0 }}>
-                    {forwardedEmailsList.map((em, index) => (
-                      <div
-                        key={index}
-                        className={`email-item ${expandedPreviewIndex === index ? 'active' : ''}`}
-                        onClick={() => setExpandedPreviewIndex(expandedPreviewIndex === index ? null : index)}
-                        style={{ marginBottom: '10px', border: '1px solid var(--border)' }}
-                      >
-                        <div style={{ fontSize: '0.75rem', color: 'var(--accent)', marginBottom: '5px', fontWeight: 'bold', textTransform: 'uppercase' }}>
-                          Found in: {em.account}
-                        </div>
-                        <div className="email-sender">
-                          <span>{em.sender}</span>
-                          <span className="email-time">{em.time}</span>
-                        </div>
-                        <div className="email-subject">{em.subject}</div>
-                        {expandedPreviewIndex !== index ? (
-                          <div className="email-preview">{em.preview}</div>
-                        ) : null}
-                        {expandedPreviewIndex === index && (
-                          <div
-                            className="detail-body"
-                            style={{ marginTop: '15px', paddingTop: '15px', borderTop: '1px solid var(--border)', fontSize: '0.9rem', color: 'var(--text-main)', cursor: 'text' }}
-                            dangerouslySetInnerHTML={{ __html: em.body }}
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : rules.length > 0 ? (
+              {rules.length > 0 ? (
                 <div>
                   <h3 style={{ fontSize: '1rem', marginBottom: '15px', color: 'var(--text-muted)' }}>Active Forwarding Emails:</h3>
                   <div className="emails-container" style={{ padding: 0 }}>
