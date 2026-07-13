@@ -13,6 +13,18 @@ app.use(express.json());
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('Connected to MongoDB'))
   .catch(err => console.error('MongoDB connection error:', err));
+
+// Force MSAL to load its token cache from MongoDB before any token operation
+const warmUpCache = async () => {
+    try {
+        const cacheDoc = await Account.findOne({ email: 'global_cache' });
+        if (cacheDoc && cacheDoc.refreshToken) {
+            cacheDoc.refreshToken.length > 10 && cca.getTokenCache().deserialize(cacheDoc.refreshToken);
+        }
+    } catch (err) {
+        console.error('Cache warm-up error:', err);
+    }
+};
 app.get('/api/accounts', async (req, res) => {
     try {
         const accounts = await Account.find({ email: { $ne: 'global_cache' } }, '-refreshToken -accessToken'); 
@@ -64,19 +76,44 @@ app.get('/api/emails/:email', async (req, res) => {
     try {
         const accountDoc = await Account.findOne({ email: req.params.email });
         if (!accountDoc) return res.status(404).json({ error: 'Account not found' });
-        const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
-        if (!msalAccount) return res.status(401).json({ error: 'Session expired. Please remove the account and add it again.' });
-        const tokenResponse = await cca.acquireTokenSilent({
-            account: msalAccount,
-            scopes: ["User.Read", "Mail.Read", "Mail.Send", "offline_access"],
-        });
+
+        // Force-load MSAL cache from MongoDB so Render restarts don't break token lookup
+        await warmUpCache();
+
+        let accessToken = null;
+
+        // Try MSAL silent token first (most up-to-date)
+        try {
+            const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
+            if (msalAccount) {
+                const tokenResponse = await cca.acquireTokenSilent({
+                    account: msalAccount,
+                    scopes: ["User.Read", "Mail.Read", "Mail.Send", "offline_access"],
+                });
+                accessToken = tokenResponse.accessToken;
+            }
+        } catch (msalErr) {
+            console.warn(`MSAL silent token failed for ${req.params.email}, trying stored token:`, msalErr.message);
+        }
+
+        // Fallback: use the stored accessToken directly from MongoDB
+        if (!accessToken && accountDoc.accessToken) {
+            console.log(`Using stored accessToken for ${req.params.email}`);
+            accessToken = accountDoc.accessToken;
+        }
+
+        if (!accessToken) {
+            return res.status(401).json({ error: 'Session expired. Please remove the account and add it again.' });
+        }
+
         // Only fetch emails from the Inbox folder, excluding Sent Items and Drafts
         const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=50&$select=sender,subject,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime DESC`;
         const graphResponse = await fetch(graphUrl, {
-            headers: { 'Authorization': `Bearer ${tokenResponse.accessToken}` }
+            headers: { 'Authorization': `Bearer ${accessToken}` }
         });
         if (!graphResponse.ok) {
-            throw new Error(`Microsoft returned an error: ${graphResponse.statusText}`);
+            const errText = await graphResponse.text();
+            throw new Error(`Microsoft returned an error: ${graphResponse.statusText} - ${errText}`);
         }
         const data = await graphResponse.json();
         res.json(data.value);
@@ -179,6 +216,9 @@ const checkAndForwardEmails = async () => {
     try {
         const rules = await Rule.find();
         if (rules.length === 0) return; // No active rules, do nothing
+
+        // Always warm up MSAL cache from MongoDB before doing any token operations
+        await warmUpCache();
 
         const accounts = await Account.find({ email: { $ne: 'global_cache' } });
         if (accounts.length === 0) return;
