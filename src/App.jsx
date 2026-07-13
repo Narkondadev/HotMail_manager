@@ -552,11 +552,6 @@ export default function App() {
                     ))}
                   </div>
                 </div>
-              ) : (
-                <div className="empty-state" style={{ height: '100%', justifyContent: 'center' }}>
-                  <Send size={48} color="var(--border)" />
-                  <p>No active forwarding emails. Add a rule on the left.</p>
-                </div>
               )}
             </div>
           </div>
