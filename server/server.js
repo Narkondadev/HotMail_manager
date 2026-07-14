@@ -6,6 +6,7 @@ const cors = require('cors');
 const { cca } = require('./auth');
 const Account = require('./models/Account');
 const Rule = require('./models/Rule');
+const Share = require('./models/Share');
 const app = express();
 const PORT = process.env.PORT || 5001;
 app.use(cors());
@@ -213,6 +214,126 @@ app.delete('/api/autoforward/rules/:id', async (req, res) => {
         const rule = await Rule.findByIdAndDelete(req.params.id);
         if (!rule) return res.status(404).json({ error: 'Rule not found' });
         res.json({ message: 'Rule deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+// --- SHARE ENDPOINTS ---
+app.get('/api/shares', async (req, res) => {
+    try {
+        const shares = await Share.find().sort({ createdAt: -1 });
+        res.json(shares);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/shares', async (req, res) => {
+    const { hotmailEmail, subjectQuery } = req.body;
+    if (!hotmailEmail || !subjectQuery) {
+        return res.status(400).json({ error: 'Missing hotmailEmail or subjectQuery' });
+    }
+    try {
+        let otp;
+        let exists = true;
+        while (exists) {
+            otp = Math.floor(100000 + Math.random() * 900000).toString();
+            const existing = await Share.findOne({ otp });
+            if (!existing) exists = false;
+        }
+        const newShare = new Share({
+            otp,
+            hotmailEmail: hotmailEmail.toLowerCase(),
+            subjectQuery
+        });
+        await newShare.save();
+        res.json(newShare);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete('/api/shares/:id', async (req, res) => {
+    try {
+        const share = await Share.findByIdAndDelete(req.params.id);
+        if (!share) return res.status(404).json({ error: 'Share not found' });
+        res.json({ message: 'Share stopped successfully' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/shares/verify', async (req, res) => {
+    const { hotmailEmail, otp } = req.body;
+    if (!hotmailEmail || !otp) {
+        return res.status(400).json({ error: 'Missing hotmailEmail or OTP' });
+    }
+    try {
+        const share = await Share.findOne({ 
+            hotmailEmail: hotmailEmail.trim().toLowerCase(), 
+            otp: otp.trim() 
+        });
+        if (!share) {
+            return res.status(401).json({ error: 'Invalid Hotmail email or OTP code.' });
+        }
+        res.json({ success: true, share });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/shares/emails', async (req, res) => {
+    const { hotmailEmail, otp } = req.query;
+    if (!hotmailEmail || !otp) {
+        return res.status(400).json({ error: 'Missing credentials' });
+    }
+    try {
+        const share = await Share.findOne({ 
+            hotmailEmail: hotmailEmail.trim().toLowerCase(), 
+            otp: otp.trim() 
+        });
+        if (!share) return res.status(401).json({ error: 'Session invalid or expired' });
+
+        const accountDoc = await Account.findOne({ email: share.hotmailEmail });
+        if (!accountDoc) return res.status(404).json({ error: 'Account not found' });
+
+        await warmUpCache();
+        let accessToken = null;
+        try {
+            const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
+            if (msalAccount) {
+                const tokenResponse = await cca.acquireTokenSilent({
+                    account: msalAccount,
+                    scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
+                });
+                accessToken = tokenResponse.accessToken;
+            }
+        } catch (err) {
+            console.error('Silent token acquisition failed for share emails, trying fallback:', err.message);
+        }
+
+        if (!accessToken && accountDoc.accessToken) {
+            accessToken = accountDoc.accessToken;
+        }
+
+        if (!accessToken) {
+            return res.status(401).json({ error: 'Session expired. Account requires re-authentication by Admin.' });
+        }
+
+        const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=50&$select=sender,subject,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime DESC`;
+        const graphResponse = await fetch(graphUrl, {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        if (!graphResponse.ok) {
+            throw new Error(`Microsoft returned an error: ${graphResponse.statusText}`);
+        }
+        const data = await graphResponse.json();
+        
+        const filtered = (data.value || []).filter(msg => 
+            msg.subject && msg.subject.toLowerCase().includes(share.subjectQuery.toLowerCase())
+        );
+        
+        res.json(filtered);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
