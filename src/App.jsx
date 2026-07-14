@@ -3,6 +3,7 @@ import { Mail, Search, Plus, Trash2, User, LogOut, ArrowLeft, Send, AlertCircle,
 import './index.css';
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(localStorage.getItem('isLoggedIn') === 'true');
+  const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -401,13 +402,13 @@ export default function App() {
       const res = await fetch(`${API_URL}/api/admin/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: loginPassword })
+        body: JSON.stringify({ email: loginEmail, password: loginPassword })
       });
       if (res.ok) {
         localStorage.setItem('isLoggedIn', 'true');
         setIsLoggedIn(true);
       } else {
-        setLoginError('Incorrect password');
+        setLoginError('Incorrect email or password');
       }
     } catch (err) {
       setLoginError('Server error, try again later');
@@ -557,6 +558,18 @@ export default function App() {
           <p style={{ color: 'var(--text-muted)', marginBottom: '30px', fontSize: '0.9rem' }}>Please enter the password to access the dashboard.</p>
           
           <form onSubmit={handleAdminLogin}>
+            <div style={{ position: 'relative', marginBottom: '15px' }}>
+              <User size={20} color="var(--text-muted)" style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)' }} />
+              <input
+                type="email"
+                placeholder="Enter admin email"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                style={{ width: '100%', padding: '12px 12px 12px 45px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '1rem', outline: 'none', transition: 'border-color 0.2s', backgroundColor: 'var(--bg-main)', boxSizing: 'border-box' }}
+                autoFocus
+                required
+              />
+            </div>
             <div style={{ position: 'relative', marginBottom: '20px' }}>
               <KeyRound size={20} color="var(--text-muted)" style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)' }} />
               <input
@@ -564,16 +577,16 @@ export default function App() {
                 placeholder="Enter password"
                 value={loginPassword}
                 onChange={(e) => setLoginPassword(e.target.value)}
-                style={{ width: '100%', padding: '12px 12px 12px 45px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '1rem', outline: 'none', transition: 'border-color 0.2s', backgroundColor: 'var(--bg-main)' }}
-                autoFocus
+                style={{ width: '100%', padding: '12px 12px 12px 45px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '1rem', outline: 'none', transition: 'border-color 0.2s', backgroundColor: 'var(--bg-main)', boxSizing: 'border-box' }}
+                required
               />
             </div>
             {loginError && <div style={{ color: 'var(--danger)', fontSize: '0.85rem', marginBottom: '20px' }}>{loginError}</div>}
             
             <button
               type="submit"
-              disabled={isLoggingIn || !loginPassword}
-              style={{ width: '100%', padding: '14px', backgroundColor: 'var(--accent)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '1rem', fontWeight: '600', cursor: isLoggingIn || !loginPassword ? 'not-allowed' : 'pointer', opacity: isLoggingIn || !loginPassword ? 0.7 : 1, transition: 'all 0.2s' }}
+              disabled={isLoggingIn || !loginEmail || !loginPassword}
+              style={{ width: '100%', padding: '14px', backgroundColor: 'var(--accent)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '1rem', fontWeight: '600', cursor: isLoggingIn || !loginEmail || !loginPassword ? 'not-allowed' : 'pointer', opacity: isLoggingIn || !loginEmail || !loginPassword ? 0.7 : 1, transition: 'all 0.2s' }}
             >
               {isLoggingIn ? 'Verifying...' : 'Access Dashboard'}
             </button>

@@ -17,13 +17,13 @@ mongoose.connect(process.env.MONGODB_URI)
 
 // Admin Login Endpoint
 app.post('/api/admin/login', (req, res) => {
-    const { password } = req.body;
+    const { email, password } = req.body;
     const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123';
     
-    if (password === adminPassword) {
+    if (email === 'tuihiyu@gmail.com' && password === adminPassword) {
         res.json({ success: true });
     } else {
-        res.status(401).json({ error: 'Invalid password' });
+        res.status(401).json({ error: 'Invalid email or password' });
     }
 });
 
