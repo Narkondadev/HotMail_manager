@@ -4,8 +4,7 @@ const ruleSchema = new mongoose.Schema({
     subjectQuery: { type: String, required: true },
     targetEmail: { type: String, required: true },
     graphRuleIds: {
-        type: Map,
-        of: String,
+        type: mongoose.Schema.Types.Mixed,
         default: {}
     }
 });

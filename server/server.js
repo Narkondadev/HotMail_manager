@@ -266,8 +266,8 @@ app.delete('/api/autoforward/rules/:id', async (req, res) => {
         const accounts = await Account.find({ email: { $ne: 'global_cache' } });
 
         // Iterate through graphRuleIds and delete them natively
-        if (rule.graphRuleIds && rule.graphRuleIds.size > 0) {
-            for (const [accountEmail, graphRuleId] of rule.graphRuleIds.entries()) {
+        if (rule.graphRuleIds && Object.keys(rule.graphRuleIds).length > 0) {
+            for (const [accountEmail, graphRuleId] of Object.entries(rule.graphRuleIds)) {
                 const accountDoc = accounts.find(a => a.email === accountEmail);
                 if (!accountDoc) continue;
 
