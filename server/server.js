@@ -294,6 +294,12 @@ async function checkAndForwardEmails() {
                 }
             } catch (err) {
                 console.error(`[ERROR] Polling failed for ${accountDoc.email}`, err.message);
+                if (err.message.includes('invalid_grant') || err.message.includes('AADSTS70000')) {
+                    if (accountDoc.status !== 'blocked') {
+                        accountDoc.status = 'blocked';
+                        await accountDoc.save();
+                    }
+                }
             }
         }
     } catch (err) {
