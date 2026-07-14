@@ -46,10 +46,19 @@ export default function App() {
   const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   const API_URL = isLocalhost ? 'http://localhost:5001' : 'https://hotmail-manager-ppna.onrender.com';
 
+  const adminFetch = async (url, options = {}) => {
+    const token = localStorage.getItem('adminToken');
+    const headers = {
+      ...options.headers,
+      'Authorization': `Bearer ${token}`
+    };
+    return fetch(url, { ...options, headers });
+  };
+
   useEffect(() => {
     if (isClientPortal) return; // Client portal does not need admin accounts
     if (!isLoggedIn) return;
-    fetch(`${API_URL}/api/accounts`)
+    adminFetch(`${API_URL}/api/accounts`)
       .then(res => res.json())
       .then(data => setAccounts(data))
       .catch(err => console.error("Failed to load accounts", err));
@@ -60,7 +69,7 @@ export default function App() {
   const handleLogout = async (email, e) => {
     e.stopPropagation();
     try {
-      await fetch(`${API_URL}/api/accounts/${encodeURIComponent(email)}`, {
+      await adminFetch(`${API_URL}/api/accounts/${encodeURIComponent(email)}`, {
         method: 'DELETE'
       });
       setAccounts(prev => prev.filter(acc => acc.email !== email));
@@ -76,7 +85,7 @@ export default function App() {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_URL}/api/emails/${encodeURIComponent(email)}`);
+      const response = await adminFetch(`${API_URL}/api/emails/${encodeURIComponent(email)}`);
       if (!response.ok) {
         throw new Error('Failed to fetch emails');
       }
@@ -108,7 +117,7 @@ export default function App() {
       const fetchPromises = accounts.map(async (account) => {
         const email = account.email;
         try {
-          const response = await fetch(`${API_URL}/api/emails/${encodeURIComponent(email)}`);
+          const response = await adminFetch(`${API_URL}/api/emails/${encodeURIComponent(email)}`);
           if (response.ok) {
             const fetchedMessages = await response.json();
             return { email, fetchedMessages };
@@ -181,7 +190,7 @@ export default function App() {
   };
   const fetchRules = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/autoforward/rules`);
+      const res = await adminFetch(`${API_URL}/api/autoforward/rules`);
       if (res.ok) {
         const data = await res.json();
         setRules(data);
@@ -208,7 +217,7 @@ export default function App() {
       }
       setIsSearching(true);
       try {
-        const response = await fetch(`${API_URL}/api/forward/search`, {
+        const response = await adminFetch(`${API_URL}/api/forward/search`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ subjectQuery: forwardSubject })
@@ -231,7 +240,7 @@ export default function App() {
     if (!forwardSubject || !targetEmail) return;
     setIsAddingRule(true);
     try {
-      const response = await fetch(`${API_URL}/api/autoforward/rules`, {
+      const response = await adminFetch(`${API_URL}/api/autoforward/rules`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subjectQuery: forwardSubject, targetEmail: targetEmail })
@@ -251,7 +260,7 @@ export default function App() {
 
   const handleDeleteRule = async (id) => {
     try {
-      await fetch(`${API_URL}/api/autoforward/rules/${id}`, { method: 'DELETE' });
+      await adminFetch(`${API_URL}/api/autoforward/rules/${id}`, { method: 'DELETE' });
       fetchRules();
     } catch (err) {
       console.error("Delete rule error:", err);
@@ -261,7 +270,7 @@ export default function App() {
   // --- OTP SHARE API ACTIONS ---
   const fetchShares = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/shares`);
+      const res = await adminFetch(`${API_URL}/api/shares`);
       if (res.ok) {
         const data = await res.json();
         setShares(data);
@@ -283,7 +292,7 @@ export default function App() {
     if (!shareSubject) return;
     setIsAddingShare(true);
     try {
-      const response = await fetch(`${API_URL}/api/shares`, {
+      const response = await adminFetch(`${API_URL}/api/shares`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subjectQuery: shareSubject })
@@ -301,7 +310,7 @@ export default function App() {
 
   const handleDeleteShare = async (id) => {
     try {
-      await fetch(`${API_URL}/api/shares/${id}`, { method: 'DELETE' });
+      await adminFetch(`${API_URL}/api/shares/${id}`, { method: 'DELETE' });
       fetchShares();
     } catch (err) {
       console.error("Delete share error:", err);
@@ -406,7 +415,9 @@ export default function App() {
         body: JSON.stringify({ email: loginEmail, password: loginPassword })
       });
       if (res.ok) {
+        const data = await res.json();
         localStorage.setItem('isLoggedIn', 'true');
+        localStorage.setItem('adminToken', data.token);
         setIsLoggedIn(true);
         window.location.href = '/';
       } else {

@@ -15,13 +15,33 @@ mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('Connected to MongoDB'))
   .catch(err => console.error('MongoDB connection error:', err));
 
+const crypto = require('crypto');
+
+// Admin Auth Middleware
+const authenticateAdmin = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const token = authHeader.split(' ')[1];
+    const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123';
+    const expectedToken = crypto.createHash('sha256').update(adminPassword).digest('hex');
+    
+    if (token === expectedToken) {
+        next();
+    } else {
+        res.status(401).json({ error: 'Unauthorized' });
+    }
+};
+
 // Admin Login Endpoint
 app.post('/api/admin/login', (req, res) => {
     const { email, password } = req.body;
     const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123';
     
     if (email === 'tuihiyu@gmail.com' && password === adminPassword) {
-        res.json({ success: true });
+        const token = crypto.createHash('sha256').update(adminPassword).digest('hex');
+        res.json({ success: true, token });
     } else {
         res.status(401).json({ error: 'Invalid email or password' });
     }
@@ -38,7 +58,7 @@ const warmUpCache = async () => {
         console.error('Cache warm-up error:', err);
     }
 };
-app.get('/api/accounts', async (req, res) => {
+app.get('/api/accounts', authenticateAdmin, async (req, res) => {
     try {
         const accounts = await Account.find({ email: { $ne: 'global_cache' } }, '-refreshToken -accessToken'); 
         res.json(accounts);
@@ -85,7 +105,7 @@ app.get('/api/auth/callback', async (req, res) => {
         res.status(500).send("Error acquiring token");
     }
 });
-app.get('/api/emails/:email', async (req, res) => {
+app.get('/api/emails/:email', authenticateAdmin, async (req, res) => {
     try {
         const accountDoc = await Account.findOne({ email: req.params.email });
         if (!accountDoc) return res.status(404).json({ error: 'Account not found' });
@@ -136,7 +156,7 @@ app.get('/api/emails/:email', async (req, res) => {
     }
 });
 // --- Search API for UI Preview ---
-app.post('/api/forward/search', async (req, res) => {
+app.post('/api/forward/search', authenticateAdmin, async (req, res) => {
     const { subjectQuery } = req.body;
     if (!subjectQuery) return res.status(400).json({ error: 'Missing subjectQuery' });
     try {
@@ -183,7 +203,7 @@ app.post('/api/forward/search', async (req, res) => {
 
 // --- Auto-Forwarding Rules APIs ---
 
-app.get('/api/autoforward/rules', async (req, res) => {
+app.get('/api/autoforward/rules', authenticateAdmin, async (req, res) => {
     try {
         const rules = await Rule.find().sort({ createdAt: -1 });
         res.json(rules);
@@ -192,7 +212,7 @@ app.get('/api/autoforward/rules', async (req, res) => {
     }
 });
 
-app.post('/api/autoforward/rules', async (req, res) => {
+app.post('/api/autoforward/rules', authenticateAdmin, async (req, res) => {
     const { subjectQuery, targetEmail } = req.body;
     if (!subjectQuery || !targetEmail) {
         return res.status(400).json({ error: 'Missing subjectQuery or targetEmail' });
@@ -209,7 +229,7 @@ app.post('/api/autoforward/rules', async (req, res) => {
     }
 });
 
-app.delete('/api/autoforward/rules/:id', async (req, res) => {
+app.delete('/api/autoforward/rules/:id', authenticateAdmin, async (req, res) => {
     try {
         const rule = await Rule.findByIdAndDelete(req.params.id);
         if (!rule) return res.status(404).json({ error: 'Rule not found' });
@@ -219,7 +239,7 @@ app.delete('/api/autoforward/rules/:id', async (req, res) => {
     }
 });
 // --- SHARE ENDPOINTS ---
-app.get('/api/shares', async (req, res) => {
+app.get('/api/shares', authenticateAdmin, async (req, res) => {
     try {
         const shares = await Share.find().sort({ createdAt: -1 });
         res.json(shares);
@@ -228,7 +248,7 @@ app.get('/api/shares', async (req, res) => {
     }
 });
 
-app.post('/api/shares', async (req, res) => {
+app.post('/api/shares', authenticateAdmin, async (req, res) => {
     const { subjectQuery } = req.body;
     if (!subjectQuery) {
         return res.status(400).json({ error: 'Missing subjectQuery' });
@@ -252,7 +272,7 @@ app.post('/api/shares', async (req, res) => {
     }
 });
 
-app.delete('/api/shares/:id', async (req, res) => {
+app.delete('/api/shares/:id', authenticateAdmin, async (req, res) => {
     try {
         const share = await Share.findByIdAndDelete(req.params.id);
         if (!share) return res.status(404).json({ error: 'Share not found' });
@@ -346,7 +366,7 @@ app.get('/api/shares/emails', async (req, res) => {
 });
 
 
-app.delete('/api/accounts/:email', async (req, res) => {
+app.delete('/api/accounts/:email', authenticateAdmin, async (req, res) => {
     try {
         await Account.findOneAndDelete({ email: req.params.email });
         res.json({ message: 'Account removed' });
