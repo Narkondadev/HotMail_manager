@@ -229,9 +229,9 @@ app.get('/api/shares', async (req, res) => {
 });
 
 app.post('/api/shares', async (req, res) => {
-    const { hotmailEmail, subjectQuery } = req.body;
-    if (!hotmailEmail || !subjectQuery) {
-        return res.status(400).json({ error: 'Missing hotmailEmail or subjectQuery' });
+    const { subjectQuery } = req.body;
+    if (!subjectQuery) {
+        return res.status(400).json({ error: 'Missing subjectQuery' });
     }
     try {
         let otp;
@@ -243,7 +243,6 @@ app.post('/api/shares', async (req, res) => {
         }
         const newShare = new Share({
             otp,
-            hotmailEmail: hotmailEmail.toLowerCase(),
             subjectQuery
         });
         await newShare.save();
@@ -264,17 +263,14 @@ app.delete('/api/shares/:id', async (req, res) => {
 });
 
 app.post('/api/shares/verify', async (req, res) => {
-    const { hotmailEmail, otp } = req.body;
-    if (!hotmailEmail || !otp) {
-        return res.status(400).json({ error: 'Missing hotmailEmail or OTP' });
+    const { otp } = req.body;
+    if (!otp) {
+        return res.status(400).json({ error: 'Missing OTP code' });
     }
     try {
-        const share = await Share.findOne({ 
-            hotmailEmail: hotmailEmail.trim().toLowerCase(), 
-            otp: otp.trim() 
-        });
+        const share = await Share.findOne({ otp: otp.trim() });
         if (!share) {
-            return res.status(401).json({ error: 'Invalid Hotmail email or OTP code.' });
+            return res.status(401).json({ error: 'Invalid OTP code.' });
         }
         res.json({ success: true, share });
     } catch (error) {
@@ -283,56 +279,67 @@ app.post('/api/shares/verify', async (req, res) => {
 });
 
 app.get('/api/shares/emails', async (req, res) => {
-    const { hotmailEmail, otp } = req.query;
-    if (!hotmailEmail || !otp) {
+    const { otp } = req.query;
+    if (!otp) {
         return res.status(400).json({ error: 'Missing credentials' });
     }
     try {
-        const share = await Share.findOne({ 
-            hotmailEmail: hotmailEmail.trim().toLowerCase(), 
-            otp: otp.trim() 
-        });
+        const share = await Share.findOne({ otp: otp.trim() });
         if (!share) return res.status(401).json({ error: 'Session invalid or expired' });
 
-        const accountDoc = await Account.findOne({ email: share.hotmailEmail });
-        if (!accountDoc) return res.status(404).json({ error: 'Account not found' });
+        const accounts = await Account.find({ email: { $ne: 'global_cache' } });
+        if (accounts.length === 0) return res.json([]);
 
         await warmUpCache();
-        let accessToken = null;
-        try {
-            const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
-            if (msalAccount) {
-                const tokenResponse = await cca.acquireTokenSilent({
-                    account: msalAccount,
-                    scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
+
+        const fetchPromises = accounts.map(async (accountDoc) => {
+            try {
+                let accessToken = null;
+                try {
+                    const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
+                    if (msalAccount) {
+                        const tokenResponse = await cca.acquireTokenSilent({
+                            account: msalAccount,
+                            scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
+                        });
+                        accessToken = tokenResponse.accessToken;
+                    }
+                } catch (err) {
+                    // Silent acquisition failed
+                }
+
+                if (!accessToken && accountDoc.accessToken) {
+                    accessToken = accountDoc.accessToken;
+                }
+
+                if (!accessToken) return [];
+
+                const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=20&$select=sender,subject,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime DESC`;
+                const graphResponse = await fetch(graphUrl, {
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
                 });
-                accessToken = tokenResponse.accessToken;
+                if (!graphResponse.ok) return [];
+
+                const data = await graphResponse.json();
+                return (data.value || []).map(msg => ({
+                    ...msg,
+                    accountEmail: accountDoc.email
+                }));
+            } catch (err) {
+                console.error(`Error fetching emails for client from ${accountDoc.email}:`, err.message);
+                return [];
             }
-        } catch (err) {
-            console.error('Silent token acquisition failed for share emails, trying fallback:', err.message);
-        }
-
-        if (!accessToken && accountDoc.accessToken) {
-            accessToken = accountDoc.accessToken;
-        }
-
-        if (!accessToken) {
-            return res.status(401).json({ error: 'Session expired. Account requires re-authentication by Admin.' });
-        }
-
-        const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=50&$select=sender,subject,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime DESC`;
-        const graphResponse = await fetch(graphUrl, {
-            headers: { 'Authorization': `Bearer ${accessToken}` }
         });
-        if (!graphResponse.ok) {
-            throw new Error(`Microsoft returned an error: ${graphResponse.statusText}`);
-        }
-        const data = await graphResponse.json();
-        
-        const filtered = (data.value || []).filter(msg => 
+
+        const allResults = await Promise.all(fetchPromises);
+        const flatMessages = allResults.flat();
+
+        const filtered = flatMessages.filter(msg => 
             msg.subject && msg.subject.toLowerCase().includes(share.subjectQuery.toLowerCase())
         );
-        
+
+        filtered.sort((a, b) => new Date(b.receivedDateTime) - new Date(a.receivedDateTime));
+
         res.json(filtered);
     } catch (error) {
         res.status(500).json({ error: error.message });
