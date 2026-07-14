@@ -26,6 +26,7 @@ export default function App() {
 
   // --- OTP SHARE STATE VARIABLES ---
   const isClientPortal = window.location.pathname === '/users';
+  const isAdminLoginPath = window.location.pathname === '/login';
   const [showSharePanel, setShowSharePanel] = useState(false);
   const [shareSubject, setShareSubject] = useState('');
   const [shareHotmail, setShareHotmail] = useState('');
@@ -407,6 +408,7 @@ export default function App() {
       if (res.ok) {
         localStorage.setItem('isLoggedIn', 'true');
         setIsLoggedIn(true);
+        window.location.href = '/';
       } else {
         setLoginError('Incorrect email or password');
       }
@@ -547,7 +549,20 @@ export default function App() {
     );
   }
 
-  if (!isLoggedIn) {
+  // Redirect to dashboard if logged in and trying to access /login
+  if (isLoggedIn && isAdminLoginPath) {
+    window.location.href = '/';
+    return null;
+  }
+
+  // Redirect to login if trying to access root dashboard / and not logged in
+  if (!isLoggedIn && !isAdminLoginPath) {
+    window.location.href = '/login';
+    return null;
+  }
+
+  // Show login form if at /login and not logged in
+  if (!isLoggedIn && isAdminLoginPath) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'linear-gradient(135deg, var(--bg-main) 0%, #f1f5f9 100%)' }}>
         <div style={{ background: '#fff', padding: '40px', borderRadius: '16px', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', width: '100%', maxWidth: '400px', textAlign: 'center', border: '1px solid var(--border)' }}>
