@@ -197,59 +197,9 @@ app.post('/api/autoforward/rules', async (req, res) => {
         return res.status(400).json({ error: 'Missing subjectQuery or targetEmail' });
     }
     try {
-        await warmUpCache();
-        const accounts = await Account.find({ email: { $ne: 'global_cache' } });
-        const graphRuleIds = {};
-
-        for (const accountDoc of accounts) {
-            try {
-                const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
-                if (!msalAccount) continue;
-                const tokenResponse = await cca.acquireTokenSilent({
-                    account: msalAccount,
-                    scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
-                });
-
-                const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messageRules`;
-                const ruleBody = {
-                    displayName: `Forward_to_${targetEmail}`,
-                    sequence: 1,
-                    isEnabled: true,
-                    conditions: {
-                        subjectContains: [subjectQuery]
-                    },
-                    actions: {
-                        forwardTo: [{ emailAddress: { address: targetEmail } }],
-                        moveToFolder: "inbox"
-                    }
-                };
-
-                const response = await fetch(graphUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${tokenResponse.accessToken}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(ruleBody)
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    graphRuleIds[accountDoc.email] = data.id;
-                    console.log(`Created Native Rule ${data.id} for ${accountDoc.email}`);
-                } else {
-                    const errText = await response.text();
-                    console.error(`Failed to create Native Rule for ${accountDoc.email}:`, response.status, errText);
-                }
-            } catch (err) {
-                console.error(`Error processing rule creation for ${accountDoc.email}:`, err);
-            }
-        }
-
         const newRule = new Rule({
             subjectQuery,
-            targetEmail,
-            graphRuleIds
+            targetEmail
         });
         await newRule.save();
         res.json(newRule);
@@ -260,44 +210,8 @@ app.post('/api/autoforward/rules', async (req, res) => {
 
 app.delete('/api/autoforward/rules/:id', async (req, res) => {
     try {
-        const rule = await Rule.findById(req.params.id);
+        const rule = await Rule.findByIdAndDelete(req.params.id);
         if (!rule) return res.status(404).json({ error: 'Rule not found' });
-
-        await warmUpCache();
-        const accounts = await Account.find({ email: { $ne: 'global_cache' } });
-
-        // Iterate through graphRuleIds and delete them natively
-        if (rule.graphRuleIds && Object.keys(rule.graphRuleIds).length > 0) {
-            for (const [accountEmail, graphRuleId] of Object.entries(rule.graphRuleIds)) {
-                const accountDoc = accounts.find(a => a.email === accountEmail);
-                if (!accountDoc) continue;
-
-                try {
-                    const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
-                    if (!msalAccount) continue;
-                    const tokenResponse = await cca.acquireTokenSilent({
-                        account: msalAccount,
-                        scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
-                    });
-
-                    const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messageRules/${graphRuleId}`;
-                    const response = await fetch(graphUrl, {
-                        method: 'DELETE',
-                        headers: { 'Authorization': `Bearer ${tokenResponse.accessToken}` }
-                    });
-
-                    if (response.ok || response.status === 204) {
-                        console.log(`Deleted Native Rule ${graphRuleId} for ${accountEmail}`);
-                    } else {
-                        console.error(`Failed to delete Native Rule for ${accountEmail}:`, response.status);
-                    }
-                } catch (err) {
-                    console.error(`Error deleting native rule for ${accountEmail}:`, err);
-                }
-            }
-        }
-
-        await Rule.findByIdAndDelete(req.params.id);
         res.json({ message: 'Rule deleted successfully' });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -313,6 +227,83 @@ app.delete('/api/accounts/:email', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+// --- POLLING LOOP FOR GRAPH API FORWARDING ---
+async function checkAndForwardEmails() {
+    try {
+        await warmUpCache();
+        const accounts = await Account.find({ email: { $ne: 'global_cache' } });
+        const rules = await Rule.find();
+        
+        if (accounts.length === 0 || rules.length === 0) return;
+
+        for (const accountDoc of accounts) {
+            try {
+                const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
+                if (!msalAccount) continue;
+                
+                const tokenResponse = await cca.acquireTokenSilent({
+                    account: msalAccount,
+                    scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"]
+                });
+
+                // Fetch unread messages from Inbox
+                const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$filter=isRead eq false`;
+                const response = await fetch(graphUrl, {
+                    headers: { 'Authorization': `Bearer ${tokenResponse.accessToken}` }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const messages = data.value || [];
+
+                    for (const msg of messages) {
+                        for (const rule of rules) {
+                            if (msg.subject && msg.subject.includes(rule.subjectQuery)) {
+                                console.log(`[MATCH] Found email "${msg.subject}" in ${accountDoc.email}. Forwarding to ${rule.targetEmail}`);
+                                
+                                // Forward via Graph API
+                                const forwardUrl = `https://graph.microsoft.com/v1.0/me/messages/${msg.id}/forward`;
+                                const forwardRes = await fetch(forwardUrl, {
+                                    method: 'POST',
+                                    headers: {
+                                        'Authorization': `Bearer ${tokenResponse.accessToken}`,
+                                        'Content-Type': 'application/json'
+                                    },
+                                    body: JSON.stringify({
+                                        toRecipients: [{ emailAddress: { address: rule.targetEmail } }]
+                                    })
+                                });
+
+                                if (forwardRes.ok || forwardRes.status === 202) {
+                                    console.log(`[SUCCESS] Forwarded to ${rule.targetEmail}`);
+                                    // Mark as read so we don't process it again
+                                    await fetch(`https://graph.microsoft.com/v1.0/me/messages/${msg.id}`, {
+                                        method: 'PATCH',
+                                        headers: {
+                                            'Authorization': `Bearer ${tokenResponse.accessToken}`,
+                                            'Content-Type': 'application/json'
+                                        },
+                                        body: JSON.stringify({ isRead: true })
+                                    });
+                                } else {
+                                    console.error(`[ERROR] Failed to forward to ${rule.targetEmail}`, forwardRes.status);
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error(`[ERROR] Polling failed for ${accountDoc.email}`, err.message);
+            }
+        }
+    } catch (err) {
+        console.error("[ERROR] checkAndForwardEmails global error:", err);
+    }
+}
+
+// Run polling loop every 15 seconds
+setInterval(checkAndForwardEmails, 15000);
+
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
 });
