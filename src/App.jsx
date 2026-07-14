@@ -885,6 +885,13 @@ export default function App() {
                                    <span style={{ color: 'var(--text-muted)' }}>Filter:</span>
                                    <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '2px 8px', borderRadius: '6px', fontWeight: '600', color: '#10b981' }}>"{share.subjectQuery}"</span>
                                  </div>
+                                 <span style={{ color: 'var(--border)' }}>•</span>
+                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                   <span style={{ color: 'var(--text-muted)' }}>Created:</span>
+                                   <span style={{ color: 'var(--text-main)', fontSize: '0.85rem' }}>
+                                     {new Date(share.createdAt).toLocaleDateString()} {new Date(share.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                   </span>
+                                 </div>
                               </div>
                             </div>
                           </div>
