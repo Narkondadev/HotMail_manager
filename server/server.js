@@ -219,7 +219,7 @@ app.post('/api/autoforward/rules', async (req, res) => {
                         subjectContains: [subjectQuery]
                     },
                     actions: {
-                        redirectTo: [{ emailAddress: { address: targetEmail } }],
+                        forwardTo: [{ emailAddress: { address: targetEmail } }],
                         moveToFolder: "inbox"
                     }
                 };
