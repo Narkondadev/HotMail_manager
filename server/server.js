@@ -263,83 +263,82 @@ app.delete('/api/shares/:id', async (req, res) => {
 });
 
 app.post('/api/shares/verify', async (req, res) => {
-    const { otp } = req.body;
-    if (!otp) {
-        return res.status(400).json({ error: 'Missing OTP code' });
+    const { hotmailEmail, otp } = req.body;
+    if (!hotmailEmail || !otp) {
+        return res.status(400).json({ error: 'Missing Hotmail email or OTP code.' });
     }
     try {
         const share = await Share.findOne({ otp: otp.trim() });
         if (!share) {
             return res.status(401).json({ error: 'Invalid OTP code.' });
         }
-        res.json({ success: true, share });
+        const accountDoc = await Account.findOne({ email: hotmailEmail.trim().toLowerCase() });
+        if (!accountDoc) {
+            return res.status(401).json({ error: 'This Hotmail account is not registered on the platform.' });
+        }
+        // Return a simulated share structure matching what the client frontend expects
+        res.json({ 
+            success: true, 
+            share: {
+                _id: share._id,
+                otp: share.otp,
+                subjectQuery: share.subjectQuery,
+                hotmailEmail: accountDoc.email
+            } 
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
 app.get('/api/shares/emails', async (req, res) => {
-    const { otp } = req.query;
-    if (!otp) {
+    const { hotmailEmail, otp } = req.query;
+    if (!hotmailEmail || !otp) {
         return res.status(400).json({ error: 'Missing credentials' });
     }
     try {
         const share = await Share.findOne({ otp: otp.trim() });
         if (!share) return res.status(401).json({ error: 'Session invalid or expired' });
 
-        const accounts = await Account.find({ email: { $ne: 'global_cache' } });
-        if (accounts.length === 0) return res.json([]);
+        const accountDoc = await Account.findOne({ email: hotmailEmail.trim().toLowerCase() });
+        if (!accountDoc) return res.status(404).json({ error: 'Hotmail account not registered' });
 
         await warmUpCache();
-
-        const fetchPromises = accounts.map(async (accountDoc) => {
-            try {
-                let accessToken = null;
-                try {
-                    const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
-                    if (msalAccount) {
-                        const tokenResponse = await cca.acquireTokenSilent({
-                            account: msalAccount,
-                            scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
-                        });
-                        accessToken = tokenResponse.accessToken;
-                    }
-                } catch (err) {
-                    // Silent acquisition failed
-                }
-
-                if (!accessToken && accountDoc.accessToken) {
-                    accessToken = accountDoc.accessToken;
-                }
-
-                if (!accessToken) return [];
-
-                const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=20&$select=sender,subject,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime DESC`;
-                const graphResponse = await fetch(graphUrl, {
-                    headers: { 'Authorization': `Bearer ${accessToken}` }
+        let accessToken = null;
+        try {
+            const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
+            if (msalAccount) {
+                const tokenResponse = await cca.acquireTokenSilent({
+                    account: msalAccount,
+                    scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
                 });
-                if (!graphResponse.ok) return [];
-
-                const data = await graphResponse.json();
-                return (data.value || []).map(msg => ({
-                    ...msg,
-                    accountEmail: accountDoc.email
-                }));
-            } catch (err) {
-                console.error(`Error fetching emails for client from ${accountDoc.email}:`, err.message);
-                return [];
+                accessToken = tokenResponse.accessToken;
             }
+        } catch (err) {
+            console.error('Silent token acquisition failed for share emails, trying fallback:', err.message);
+        }
+
+        if (!accessToken && accountDoc.accessToken) {
+            accessToken = accountDoc.accessToken;
+        }
+
+        if (!accessToken) {
+            return res.status(401).json({ error: 'Session expired. Account requires re-authentication by Admin.' });
+        }
+
+        const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=50&$select=sender,subject,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime DESC`;
+        const graphResponse = await fetch(graphUrl, {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
         });
-
-        const allResults = await Promise.all(fetchPromises);
-        const flatMessages = allResults.flat();
-
-        const filtered = flatMessages.filter(msg => 
+        if (!graphResponse.ok) {
+            throw new Error(`Microsoft returned an error: ${graphResponse.statusText}`);
+        }
+        const data = await graphResponse.json();
+        
+        const filtered = (data.value || []).filter(msg => 
             msg.subject && msg.subject.toLowerCase().includes(share.subjectQuery.toLowerCase())
         );
-
-        filtered.sort((a, b) => new Date(b.receivedDateTime) - new Date(a.receivedDateTime));
-
+        
         res.json(filtered);
     } catch (error) {
         res.status(500).json({ error: error.message });

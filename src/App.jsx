@@ -315,13 +315,13 @@ export default function App() {
       const res = await fetch(`${API_URL}/api/shares/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ otp: clientOtp })
+        body: JSON.stringify({ hotmailEmail: clientHotmail, otp: clientOtp })
       });
       const data = await res.json();
       if (res.ok) {
         setClientShareInfo(data.share);
         setClientVerified(true);
-        fetchClientEmails(data.share.otp);
+        fetchClientEmails(data.share.hotmailEmail, data.share.otp);
       } else {
         setClientError(data.error || 'Invalid login details.');
       }
@@ -332,10 +332,10 @@ export default function App() {
     }
   };
 
-  const fetchClientEmails = async (otp) => {
+  const fetchClientEmails = async (email, otp) => {
     setClientLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/shares/emails?otp=${encodeURIComponent(otp)}`);
+      const res = await fetch(`${API_URL}/api/shares/emails?hotmailEmail=${encodeURIComponent(email)}&otp=${encodeURIComponent(otp)}`);
       const data = await res.json();
       if (res.ok) {
         const formatted = data.map(msg => {
@@ -362,7 +362,7 @@ export default function App() {
   useEffect(() => {
     if (isClientPortal && clientVerified && clientShareInfo) {
       const interval = setInterval(() => {
-        fetchClientEmails(clientShareInfo.otp);
+        fetchClientEmails(clientShareInfo.hotmailEmail, clientShareInfo.otp);
       }, 15000);
       return () => clearInterval(interval);
     }
@@ -426,9 +426,19 @@ export default function App() {
               <KeyRound size={32} color="var(--accent)" />
             </div>
             <h1 style={{ fontSize: '1.5rem', marginBottom: '10px', color: 'var(--text-main)', fontWeight: '700' }}>Client Portal</h1>
-            <p style={{ color: 'var(--text-muted)', marginBottom: '30px', fontSize: '0.9rem' }}>Enter your 6-digit OTP code to unlock your inbox.</p>
+            <p style={{ color: 'var(--text-muted)', marginBottom: '30px', fontSize: '0.9rem' }}>Enter your Hotmail and OTP code to unlock your inbox.</p>
             
             <form onSubmit={handleClientLogin}>
+              <div style={{ marginBottom: '15px' }}>
+                <input
+                  type="email"
+                  placeholder="Enter Hotmail Address"
+                  value={clientHotmail}
+                  onChange={(e) => setClientHotmail(e.target.value)}
+                  required
+                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '1rem', outline: 'none', backgroundColor: 'var(--bg-main)', boxSizing: 'border-box' }}
+                />
+              </div>
               <div style={{ marginBottom: '20px' }}>
                 <input
                   type="text"
@@ -444,7 +454,7 @@ export default function App() {
               
               <button
                 type="submit"
-                disabled={clientLoading || !clientOtp}
+                disabled={clientLoading || !clientHotmail || !clientOtp}
                 style={{ width: '100%', padding: '14px', backgroundColor: 'var(--accent)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '1rem', fontWeight: '600', cursor: clientLoading ? 'not-allowed' : 'pointer', opacity: clientLoading ? 0.7 : 1 }}
               >
                 {clientLoading ? 'Verifying...' : 'Unlock Inbox'}
@@ -472,8 +482,8 @@ export default function App() {
           </div>
           <div className="sidebar-content" style={{ padding: '20px' }}>
             <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: 'rgba(16,185,129,0.05)', borderRadius: '12px', border: '1px solid rgba(16,185,129,0.1)' }}>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>Target Accounts</div>
-              <div style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--text-main)' }}>All Connected Hotmails</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>Target Account</div>
+              <div style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--text-main)', wordBreak: 'break-all' }} title={clientShareInfo?.hotmailEmail}>{clientShareInfo?.hotmailEmail}</div>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', marginTop: '12px', marginBottom: '6px' }}>Filter matches subject</div>
               <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '3px 10px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold' }}>
                 "{clientShareInfo?.subjectQuery}"
@@ -495,10 +505,7 @@ export default function App() {
                       <span style={{ fontWeight: '600' }}>{email.sender}</span>
                       <span className="email-time">{email.time}</span>
                     </div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                      Received by: {email.accountEmail}
-                    </div>
-                    <div className="email-subject" style={{ fontWeight: '500', marginTop: '4px' }}>{email.subject}</div>
+                    <div className="email-subject" style={{ fontWeight: '500' }}>{email.subject}</div>
                     <div className="email-preview">{email.preview}</div>
                   </div>
                 ))
@@ -519,7 +526,7 @@ export default function App() {
                   </div>
                   <div className="meta-info">
                     <span className="meta-sender">{selectedClientEmail.sender}</span>
-                    <span className="meta-recipient">To: {selectedClientEmail.accountEmail}</span>
+                    <span className="meta-recipient">To: {clientShareInfo?.hotmailEmail}</span>
                   </div>
                 </div>
               </div>
@@ -671,26 +678,11 @@ export default function App() {
                       required
                     />
                   </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)' }}>Select Hotmail Account</label>
-                    <select
-                      className="search-box"
-                      style={{ width: '100%', padding: '12px', marginBottom: '15px', color: 'var(--text-main)' }}
-                      value={shareHotmail}
-                      onChange={(e) => setShareHotmail(e.target.value)}
-                      required
-                    >
-                      <option value="">-- Choose Hotmail --</option>
-                      {accounts.map(acc => (
-                        <option key={acc.email} value={acc.email}>{acc.email}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <button
+                   <button
                     type="submit"
                     className="add-btn"
-                    disabled={isAddingShare || !shareSubject || !shareHotmail}
-                    style={{ width: '100%', display: 'flex', justifyContent: 'center', backgroundColor: (isAddingShare || !shareSubject || !shareHotmail) ? 'var(--border)' : 'var(--accent)', color: (isAddingShare || !shareSubject || !shareHotmail) ? 'var(--text-muted)' : 'white' }}
+                    disabled={isAddingShare || !shareSubject}
+                    style={{ width: '100%', display: 'flex', justifyContent: 'center', backgroundColor: (isAddingShare || !shareSubject) ? 'var(--border)' : 'var(--accent)', color: (isAddingShare || !shareSubject) ? 'var(--text-muted)' : 'white' }}
                   >
                     {isAddingShare ? 'Generating...' : 'Generate Share OTP'}
                   </button>
@@ -889,11 +881,6 @@ export default function App() {
                                  </span>
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', fontSize: '0.9rem' }}>
-                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                   <span style={{ color: 'var(--text-muted)' }}>Emails:</span>
-                                   <span style={{ fontWeight: '600', color: 'var(--text-main)' }}>All Connected Hotmails</span>
-                                 </div>
-                                 <span style={{ color: 'var(--border)' }}>•</span>
                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                    <span style={{ color: 'var(--text-muted)' }}>Filter:</span>
                                    <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '2px 8px', borderRadius: '6px', fontWeight: '600', color: '#10b981' }}>"{share.subjectQuery}"</span>
