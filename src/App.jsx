@@ -29,6 +29,7 @@ export default function App() {
   const isAdminLoginPath = window.location.pathname === '/login';
   const [showSharePanel, setShowSharePanel] = useState(false);
   const [shareSubject, setShareSubject] = useState('');
+  const [customOtp, setCustomOtp] = useState('');
   const [shareHotmail, setShareHotmail] = useState('');
   const [shares, setShares] = useState([]);
   const [isAddingShare, setIsAddingShare] = useState(false);
@@ -289,16 +290,20 @@ export default function App() {
 
   const handleAddShare = async (e) => {
     e.preventDefault();
-    if (!shareSubject) return;
+    if (!shareSubject || !customOtp) return;
     setIsAddingShare(true);
     try {
       const response = await adminFetch(`${API_URL}/api/shares`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subjectQuery: shareSubject })
+        body: JSON.stringify({ 
+          subjectQuery: shareSubject,
+          customOtp: customOtp.trim()
+        })
       });
       if (response.ok) {
         setShareSubject('');
+        setCustomOtp('');
         fetchShares();
       }
     } catch (err) {
@@ -717,13 +722,25 @@ export default function App() {
                       required
                     />
                   </div>
+                  <div style={{ marginBottom: '15px' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)' }}>OTP Code (Required)</label>
+                    <input
+                      type="text"
+                      className="search-box"
+                      placeholder="e.g. 123456"
+                      style={{ width: '100%', padding: '12px' }}
+                      value={customOtp}
+                      onChange={(e) => setCustomOtp(e.target.value)}
+                      required
+                    />
+                  </div>
                    <button
                     type="submit"
                     className="add-btn"
-                    disabled={isAddingShare || !shareSubject}
-                    style={{ width: '100%', display: 'flex', justifyContent: 'center', backgroundColor: (isAddingShare || !shareSubject) ? 'var(--border)' : 'var(--accent)', color: (isAddingShare || !shareSubject) ? 'var(--text-muted)' : 'white' }}
+                    disabled={isAddingShare || !shareSubject || !customOtp}
+                    style={{ width: '100%', display: 'flex', justifyContent: 'center', backgroundColor: (isAddingShare || !shareSubject || !customOtp) ? 'var(--border)' : 'var(--accent)', color: (isAddingShare || !shareSubject || !customOtp) ? 'var(--text-muted)' : 'white' }}
                   >
-                    {isAddingShare ? 'Generating...' : 'Generate Share OTP'}
+                    {isAddingShare ? 'Creating...' : 'Create Share OTP'}
                   </button>
                 </form>
               </div>

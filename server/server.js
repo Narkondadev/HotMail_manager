@@ -12,7 +12,12 @@ const PORT = process.env.PORT || 5001;
 app.use(cors());
 app.use(express.json());
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB'))
+  .then(() => {
+    console.log('Connected to MongoDB');
+    Share.collection.dropIndex('otp_1').catch(() => {
+      // Ignore if index doesn't exist
+    });
+  })
   .catch(err => console.error('MongoDB connection error:', err));
 
 const crypto = require('crypto');
@@ -249,21 +254,15 @@ app.get('/api/shares', authenticateAdmin, async (req, res) => {
 });
 
 app.post('/api/shares', authenticateAdmin, async (req, res) => {
-    const { subjectQuery } = req.body;
-    if (!subjectQuery) {
-        return res.status(400).json({ error: 'Missing subjectQuery' });
+    const { subjectQuery, customOtp, otp: rawOtp } = req.body;
+    const otp = (customOtp || rawOtp || '').trim();
+    if (!subjectQuery || !otp) {
+        return res.status(400).json({ error: 'Missing subjectQuery or OTP code.' });
     }
     try {
-        let otp;
-        let exists = true;
-        while (exists) {
-            otp = Math.floor(100000 + Math.random() * 900000).toString();
-            const existing = await Share.findOne({ otp });
-            if (!existing) exists = false;
-        }
         const newShare = new Share({
             otp,
-            subjectQuery
+            subjectQuery: subjectQuery.trim()
         });
         await newShare.save();
         res.json(newShare);
@@ -288,21 +287,21 @@ app.post('/api/shares/verify', async (req, res) => {
         return res.status(400).json({ error: 'Missing Hotmail email or OTP code.' });
     }
     try {
-        const share = await Share.findOne({ otp: otp.trim() });
-        if (!share) {
+        const shares = await Share.find({ otp: otp.trim() });
+        if (!shares || shares.length === 0) {
             return res.status(401).json({ error: 'Invalid OTP code.' });
         }
         const accountDoc = await Account.findOne({ email: hotmailEmail.trim().toLowerCase() });
         if (!accountDoc) {
             return res.status(401).json({ error: 'This Hotmail account is not registered on the platform.' });
         }
-        // Return a simulated share structure matching what the client frontend expects
+        const combinedSubjects = shares.map(s => s.subjectQuery).join(', ');
         res.json({ 
             success: true, 
             share: {
-                _id: share._id,
-                otp: share.otp,
-                subjectQuery: share.subjectQuery,
+                _id: shares[0]._id,
+                otp: otp.trim(),
+                subjectQuery: combinedSubjects,
                 hotmailEmail: accountDoc.email
             } 
         });
@@ -317,8 +316,8 @@ app.get('/api/shares/emails', async (req, res) => {
         return res.status(400).json({ error: 'Missing credentials' });
     }
     try {
-        const share = await Share.findOne({ otp: otp.trim() });
-        if (!share) return res.status(401).json({ error: 'Session invalid or expired' });
+        const shares = await Share.find({ otp: otp.trim() });
+        if (!shares || shares.length === 0) return res.status(401).json({ error: 'Session invalid or expired' });
 
         const accountDoc = await Account.findOne({ email: hotmailEmail.trim().toLowerCase() });
         if (!accountDoc) return res.status(404).json({ error: 'Hotmail account not registered' });
@@ -355,9 +354,12 @@ app.get('/api/shares/emails', async (req, res) => {
         }
         const data = await graphResponse.json();
         
-        const filtered = (data.value || []).filter(msg => 
-            msg.subject && msg.subject.toLowerCase().includes(share.subjectQuery.toLowerCase())
-        );
+        const subjectQueries = shares.map(s => s.subjectQuery.trim().toLowerCase()).filter(Boolean);
+        const filtered = (data.value || []).filter(msg => {
+            if (!msg.subject) return false;
+            const lowerSubj = msg.subject.toLowerCase();
+            return subjectQueries.some(q => lowerSubj.includes(q));
+        });
         
         res.json(filtered);
     } catch (error) {
