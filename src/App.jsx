@@ -15,14 +15,6 @@ export default function App() {
   const [emails, setEmails] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [showAutoForwarder, setShowAutoForwarder] = useState(false);
-  const [forwardSubject, setForwardSubject] = useState('');
-  const [targetEmail, setTargetEmail] = useState('');
-  const [rules, setRules] = useState([]);
-  const [isAddingRule, setIsAddingRule] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
-  const [forwardedEmailsList, setForwardedEmailsList] = useState([]);
-  const [expandedPreviewIndex, setExpandedPreviewIndex] = useState(null);
 
   // --- OTP SHARE STATE VARIABLES ---
   const isClientPortal = window.location.pathname === '/users';
@@ -189,86 +181,6 @@ export default function App() {
     e.preventDefault();
     if (filteredAccounts.length > 0) {
       handleSelectAccount(filteredAccounts[0]);
-    }
-  };
-  const fetchRules = async () => {
-    try {
-      const res = await adminFetch(`${API_URL}/api/autoforward/rules`);
-      if (res.ok) {
-        const data = await res.json();
-        setRules(data);
-      }
-    } catch (err) {
-      console.error("Failed to load rules", err);
-    }
-  };
-
-  useEffect(() => {
-    if (showAutoForwarder) {
-      fetchRules();
-      const interval = setInterval(() => {
-        if (!document.hidden) fetchRules();
-      }, 15000);
-      return () => clearInterval(interval);
-    }
-  }, [showAutoForwarder, API_URL]);
-
-  useEffect(() => {
-    if (!showAutoForwarder) return;
-    const timer = setTimeout(async () => {
-      if (forwardSubject.trim() === '') {
-        setForwardedEmailsList([]);
-        return;
-      }
-      setIsSearching(true);
-      try {
-        const response = await adminFetch(`${API_URL}/api/forward/search`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ subjectQuery: forwardSubject })
-        });
-        const data = await response.json();
-        if (response.ok) {
-          setForwardedEmailsList(data.matchingEmails || []);
-        }
-      } catch (err) {
-        console.error("Search error:", err);
-      } finally {
-        setIsSearching(false);
-      }
-    }, 800);
-    return () => clearTimeout(timer);
-  }, [forwardSubject, showAutoForwarder, API_URL]);
-
-  const handleAddRule = async (e) => {
-    e.preventDefault();
-    if (!forwardSubject || !targetEmail) return;
-    setIsAddingRule(true);
-    try {
-      const response = await adminFetch(`${API_URL}/api/autoforward/rules`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subjectQuery: forwardSubject, targetEmail: targetEmail })
-      });
-      if (response.ok) {
-        setForwardSubject('');
-        setTargetEmail('');
-        setForwardedEmailsList([]);
-        fetchRules();
-      }
-    } catch (err) {
-      console.error("Add rule error:", err);
-    } finally {
-      setIsAddingRule(false);
-    }
-  };
-
-  const handleDeleteRule = async (id) => {
-    try {
-      await adminFetch(`${API_URL}/api/autoforward/rules/${id}`, { method: 'DELETE' });
-      fetchRules();
-    } catch (err) {
-      console.error("Delete rule error:", err);
     }
   };
 
@@ -671,9 +583,9 @@ export default function App() {
           {filteredAccounts.map(account => (
             <div
               key={account.email}
-              className={`account-item ${selectedAccount === account.email && !showAutoForwarder ? 'active' : ''}`}
+              className={`account-item ${selectedAccount === account.email ? 'active' : ''}`}
               style={{ cursor: 'pointer' }}
-              onClick={() => { setShowAutoForwarder(false); handleSelectAccount(account); }}
+              onClick={() => { handleSelectAccount(account); }}
             >
               <div className="account-info">
                 <User size={18} />
@@ -695,13 +607,9 @@ export default function App() {
           ))}
         </div>
         <div className="sidebar-footer">
-          <button className="add-btn" onClick={() => { setShowSharePanel(true); setShowAutoForwarder(false); setSelectedAccount(null); setSelectedEmail(null); }} style={{ marginBottom: '10px', backgroundColor: 'var(--accent)', color: 'white' }}>
+          <button className="add-btn" onClick={() => { setShowSharePanel(true); setSelectedAccount(null); setSelectedEmail(null); }} style={{ marginBottom: '10px', backgroundColor: 'var(--accent)', color: 'white' }}>
             <KeyRound size={18} />
             Share to Client
-          </button>
-          <button className="add-btn" onClick={() => { setShowAutoForwarder(true); setShowSharePanel(false); setSelectedAccount(null); setSelectedEmail(null); }} style={{ marginBottom: '10px', backgroundColor: 'var(--accent)', color: 'white' }}>
-            <Send size={18} />
-            Forward
           </button>
           <button className="add-btn" onClick={handleLogin}>
             <Plus size={18} />
@@ -754,56 +662,6 @@ export default function App() {
               </div>
               <button
                 onClick={() => setShowSharePanel(false)}
-                style={{ marginTop: '30px', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
-              >
-                <ArrowLeft size={18} /> Back to Accounts
-              </button>
-            </div>
-          </>
-        ) : showAutoForwarder ? (
-          <>
-            <div className="list-header">
-              <h2 style={{ margin: 0 }}>Forward</h2>
-            </div>
-            <div style={{ padding: '30px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <form onSubmit={handleAddRule}>
-                  <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)' }}>Subject Filter</label>
-                    <input
-                      type="text"
-                      className="search-box"
-                      placeholder="e.g. Important Invoice"
-                      style={{ width: '100%', padding: '12px' }}
-                      value={forwardSubject}
-                      onChange={(e) => setForwardSubject(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)' }}>Target Gmail Address</label>
-                    <input
-                      type="email"
-                      className="search-box"
-                      placeholder="e.g. my-gmail@gmail.com"
-                      style={{ width: '100%', padding: '12px', marginBottom: '15px' }}
-                      value={targetEmail}
-                      onChange={(e) => setTargetEmail(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    className="add-btn"
-                    disabled={isAddingRule || !forwardSubject || !targetEmail}
-                    style={{ width: '100%', display: 'flex', justifyContent: 'center', backgroundColor: (isAddingRule || !forwardSubject || !targetEmail) ? 'var(--border)' : 'var(--accent)', color: (isAddingRule || !forwardSubject || !targetEmail) ? 'var(--text-muted)' : 'white' }}
-                  >
-                    {isAddingRule ? 'Adding...' : 'Add Forward Rule'}
-                  </button>
-                </form>
-              </div>
-              <button
-                onClick={() => setShowAutoForwarder(false)}
                 style={{ marginTop: '30px', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
               >
                 <ArrowLeft size={18} /> Back to Accounts
@@ -975,76 +833,6 @@ export default function App() {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '16px', opacity: 0.35 }}>
                   <KeyRound size={56} color="var(--accent)" />
-                  <p style={{ color: 'var(--text-muted)' }}>No active client shares generated</p>
-                </div>
-              )}
-            </div>
-          </div>
-        ) : showAutoForwarder ? (
-          <div style={{ padding: '30px', height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '15px', borderBottom: '1px solid var(--border)', paddingBottom: '20px', marginBottom: '20px', flexShrink: 0 }}>
-              <Send size={24} color="var(--accent)" />
-              <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Active Forwarding Emails</h2>
-            </div>
-            <div style={{ flex: 1, overflowY: 'auto', paddingRight: '10px' }}>
-              {rules.length > 0 ? (
-                <div>
-                  <h3 style={{ fontSize: '1rem', marginBottom: '15px', color: 'var(--text-muted)' }}>Active Forwarding Emails:</h3>
-                  <div className="emails-container" style={{ padding: 0 }}>
-                    {rules.map((rule) => (
-                      <div
-                        key={rule._id}
-                        className="email-item"
-                        style={{ marginBottom: '15px', border: '1px solid var(--border)', borderRadius: '12px', padding: '15px', cursor: 'default', background: 'var(--bg-main)', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', transition: 'all 0.2s' }}
-                        onMouseOver={(e) => { e.currentTarget.style.transform = 'translateY(-3px)'; e.currentTarget.style.boxShadow = '0 6px 12px rgba(0,0,0,0.1)'; }}
-                        onMouseOut={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.05)'; }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                          <div style={{ display: 'flex', gap: '15px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', borderRadius: '50%', backgroundColor: 'rgba(16, 185, 129, 0.1)', flexShrink: 0 }}>
-                              <Mail size={16} color="#10b981" />
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                                 <span style={{ fontSize: '0.95rem', color: 'var(--text-main)', fontWeight: '600' }}>Active Forwarding Email</span>
-                                 <span style={{ fontSize: '0.7rem', color: '#10b981', fontWeight: 'bold', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(16,185,129,0.1)', padding: '2px 8px', borderRadius: '10px' }}>
-                                   <span className="animate-pulse" style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981' }}></span>
-                                   Monitoring 24/7
-                                 </span>
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', fontSize: '0.9rem' }}>
-                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                   <span style={{ color: 'var(--text-muted)' }}>Subject matches:</span>
-                                   <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '2px 8px', borderRadius: '6px', fontWeight: '600', color: '#10b981' }}>"{rule.subjectQuery}"</span>
-                                 </div>
-                                 <span style={{ color: 'var(--border)' }}>→</span>
-                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                   <span style={{ color: 'var(--text-muted)' }}>Forwards to:</span>
-                                   <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '2px 8px', borderRadius: '6px', fontWeight: '600', color: '#10b981' }}>{rule.targetEmail}</span>
-                                   <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '4px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    <div style={{ width: '6px', height: '6px', backgroundColor: '#10b981', borderRadius: '50%' }}></div>
-                                    Monitoring 24/7
-                                  </span>
-                                  </div>
-                              </div>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => handleDeleteRule(rule._id)}
-                            style={{ padding: '6px 10px', backgroundColor: 'var(--bg-dark)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '500', fontSize: '0.75rem', transition: 'all 0.2s', flexShrink: 0 }}
-                            onMouseOver={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; }}
-                            onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-dark)'; }}
-                          >
-                            <Trash2 size={14} /> Stop
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '16px', opacity: 0.35 }}>
-                  <Send size={56} color="var(--accent)" className="animate-pulse" />
                 </div>
               )}
             </div>
@@ -1070,11 +858,6 @@ export default function App() {
               dangerouslySetInnerHTML={{ __html: selectedEmail.body }}
             />
           </>
-        ) : showAutoForwarder ? (
-          <div className="empty-state">
-            <Send size={48} strokeWidth={1} color="var(--accent)" />
-            <p>Bots are running continuously in the background</p>
-          </div>
         ) : (
           <div className="empty-state">
             <Mail size={48} strokeWidth={1} />
