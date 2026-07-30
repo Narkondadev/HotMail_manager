@@ -5,7 +5,6 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const { cca } = require('./auth');
 const Account = require('./models/Account');
-const Rule = require('./models/Rule');
 const Share = require('./models/Share');
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -213,43 +212,11 @@ app.post('/api/forward/search', authenticateAdmin, async (req, res) => {
     }
 });
 
-// --- Auto-Forwarding Rules APIs ---
+// --- Auto-Forwarding Stub Endpoints (Disabled to prevent RAM overload) ---
+app.get('/api/autoforward/rules', authenticateAdmin, (req, res) => res.json([]));
+app.post('/api/autoforward/rules', authenticateAdmin, (req, res) => res.status(400).json({ error: 'Auto-forwarding feature disabled to prevent high RAM usage.' }));
+app.delete('/api/autoforward/rules/:id', authenticateAdmin, (req, res) => res.json({ message: 'Rule deleted' }));
 
-app.get('/api/autoforward/rules', authenticateAdmin, async (req, res) => {
-    try {
-        const rules = await Rule.find().sort({ createdAt: -1 });
-        res.json(rules);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-app.post('/api/autoforward/rules', authenticateAdmin, async (req, res) => {
-    const { subjectQuery, targetEmail } = req.body;
-    if (!subjectQuery || !targetEmail) {
-        return res.status(400).json({ error: 'Missing subjectQuery or targetEmail' });
-    }
-    try {
-        const newRule = new Rule({
-            subjectQuery,
-            targetEmail
-        });
-        await newRule.save();
-        res.json(newRule);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-app.delete('/api/autoforward/rules/:id', authenticateAdmin, async (req, res) => {
-    try {
-        const rule = await Rule.findByIdAndDelete(req.params.id);
-        if (!rule) return res.status(404).json({ error: 'Rule not found' });
-        res.json({ message: 'Rule deleted successfully' });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
 // --- SHARE ENDPOINTS ---
 app.get('/api/shares', authenticateAdmin, async (req, res) => {
     try {
@@ -383,92 +350,6 @@ app.delete('/api/accounts/:email', authenticateAdmin, async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
-// --- POLLING LOOP FOR GRAPH API FORWARDING ---
-async function checkAndForwardEmails() {
-    try {
-        const ruleCount = await Rule.countDocuments();
-        if (ruleCount === 0) return;
-
-        await warmUpCache();
-        const accounts = await Account.find({ email: { $ne: 'global_cache' } });
-        if (accounts.length === 0) return;
-
-        const rules = await Rule.find();
-
-        for (const accountDoc of accounts) {
-            try {
-                const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
-                if (!msalAccount) continue;
-                
-                const tokenResponse = await cca.acquireTokenSilent({
-                    account: msalAccount,
-                    scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"]
-                });
-
-                // Fetch unread messages from Inbox
-                const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$filter=isRead eq false`;
-                const response = await fetch(graphUrl, {
-                    headers: { 'Authorization': `Bearer ${tokenResponse.accessToken}` }
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    const messages = data.value || [];
-
-                    for (const msg of messages) {
-                        for (const rule of rules) {
-                            if (msg.subject && msg.subject.includes(rule.subjectQuery)) {
-                                console.log(`[MATCH] Found email "${msg.subject}" in ${accountDoc.email}. Forwarding to ${rule.targetEmail}`);
-                                
-                                // Forward via Graph API
-                                const forwardUrl = `https://graph.microsoft.com/v1.0/me/messages/${msg.id}/forward`;
-                                const forwardRes = await fetch(forwardUrl, {
-                                    method: 'POST',
-                                    headers: {
-                                        'Authorization': `Bearer ${tokenResponse.accessToken}`,
-                                        'Content-Type': 'application/json'
-                                    },
-                                    body: JSON.stringify({
-                                        toRecipients: [{ emailAddress: { address: rule.targetEmail } }]
-                                    })
-                                });
-
-                                if (forwardRes.ok || forwardRes.status === 202) {
-                                    console.log(`[SUCCESS] Forwarded to ${rule.targetEmail}`);
-                                    // Mark as read so we don't process it again
-                                    await fetch(`https://graph.microsoft.com/v1.0/me/messages/${msg.id}`, {
-                                        method: 'PATCH',
-                                        headers: {
-                                            'Authorization': `Bearer ${tokenResponse.accessToken}`,
-                                            'Content-Type': 'application/json'
-                                        },
-                                        body: JSON.stringify({ isRead: true })
-                                    });
-                                } else {
-                                    console.error(`[ERROR] Failed to forward to ${rule.targetEmail}`, forwardRes.status);
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch (err) {
-                console.error(`[ERROR] Polling failed for ${accountDoc.email}`, err.message);
-                if (err.message.includes('invalid_grant') || err.message.includes('AADSTS70000')) {
-                    if (accountDoc.status !== 'blocked') {
-                        accountDoc.status = 'blocked';
-                        await accountDoc.save();
-                    }
-                }
-            }
-        }
-    } catch (err) {
-        console.error("[ERROR] checkAndForwardEmails global error:", err);
-    }
-}
-
-// Run polling loop every 30 seconds
-setInterval(checkAndForwardEmails, 30000);
-
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
 });
