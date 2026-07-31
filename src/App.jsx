@@ -507,7 +507,7 @@ export default function App() {
           <div style={{ padding: '0 5px 12px 5px', borderBottom: '1px solid var(--border)', marginBottom: '12px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.5px' }}>
-                Added Hotmails ({accounts.length})
+                Added Hotmails
               </span>
               <button
                 onClick={handleVerifyAllTokens}
