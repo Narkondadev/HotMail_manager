@@ -135,10 +135,6 @@ export default function App() {
   useEffect(() => {
     if (!isLoggedIn || isClientPortal) return;
     fetchShares();
-    const interval = setInterval(() => {
-      if (!document.hidden) fetchShares();
-    }, 15000);
-    return () => clearInterval(interval);
   }, [isLoggedIn]);
 
   const handleAddShare = async (e) => {
