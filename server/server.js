@@ -136,8 +136,8 @@ app.get('/api/emails/:email', authenticateAdmin, async (req, res) => {
             console.warn(`MSAL silent token failed for ${req.params.email}, trying stored token:`, msalErr.message);
         }
 
-        // Fallback: use the stored accessToken directly from MongoDB
-        if (!accessToken && accountDoc.accessToken) {
+        // Fallback: use the stored accessToken directly if it's a valid JWT token string
+        if (!accessToken && accountDoc.accessToken && accountDoc.accessToken !== 'managed-by-msal-cache' && accountDoc.accessToken.includes('.')) {
             console.log(`Using stored accessToken for ${req.params.email}`);
             accessToken = accountDoc.accessToken;
         }
@@ -311,7 +311,7 @@ app.get('/api/shares/emails', async (req, res) => {
             console.error('Silent token acquisition failed for share emails, trying fallback:', err.message);
         }
 
-        if (!accessToken && accountDoc.accessToken) {
+        if (!accessToken && accountDoc.accessToken && accountDoc.accessToken !== 'managed-by-msal-cache' && accountDoc.accessToken.includes('.')) {
             accessToken = accountDoc.accessToken;
         }
 
