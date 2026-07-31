@@ -65,6 +65,39 @@ const warmUpCache = async (force = false) => {
         console.error('Cache warm-up error:', err);
     }
 };
+
+const saveMsalCache = async () => {
+    try {
+        const serialized = cca.getTokenCache().serialize();
+        if (serialized && serialized.length > 10) {
+            await Account.findOneAndUpdate(
+                { email: 'global_cache' },
+                { 
+                    email: 'global_cache',
+                    name: 'MSAL Global Cache',
+                    homeAccountId: 'global_cache_id',
+                    refreshToken: serialized
+                },
+                { upsert: true, new: true }
+            );
+        }
+    } catch (err) {
+        console.error('Failed to save MSAL cache to MongoDB:', err);
+    }
+};
+
+const getMsalAccount = async (homeAccountId, userEmail) => {
+    try {
+        let acc = await cca.getTokenCache().getAccountByHomeId(homeAccountId);
+        if (!acc && userEmail) {
+            const allAccounts = await cca.getTokenCache().getAllAccounts();
+            acc = allAccounts.find(a => a.username && a.username.toLowerCase() === userEmail.toLowerCase());
+        }
+        return acc;
+    } catch (e) {
+        return null;
+    }
+};
 app.get('/api/accounts', authenticateAdmin, async (req, res) => {
     try {
         const accounts = await Account.find({ email: { $ne: 'global_cache' } }, '-refreshToken -accessToken'); 
@@ -82,7 +115,7 @@ app.post('/api/accounts/verify-health', authenticateAdmin, async (req, res) => {
         
         await Promise.all(accounts.map(async (accountDoc) => {
             try {
-                const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
+                const msalAccount = await getMsalAccount(accountDoc.homeAccountId, accountDoc.email);
                 if (msalAccount) {
                     const tokenResponse = await cca.acquireTokenSilent({
                         account: msalAccount,
@@ -104,6 +137,7 @@ app.post('/api/accounts/verify-health', authenticateAdmin, async (req, res) => {
                 }
             }
         }));
+        await saveMsalCache();
 
         const updatedAccounts = await Account.find({ email: { $ne: 'global_cache' } }, '-refreshToken -accessToken');
         res.json({ success: true, accounts: updatedAccounts });
@@ -141,10 +175,12 @@ app.get('/api/auth/callback', async (req, res) => {
                 name: name || username, 
                 homeAccountId: homeAccountId,
                 refreshToken: "managed-by-msal-cache", 
-                accessToken: response.accessToken
+                accessToken: response.accessToken,
+                status: 'active'
             },
             { upsert: true, new: true }
         );
+        await saveMsalCache();
         res.redirect(process.env.FRONTEND_URL || 'http://localhost:5173');
     } catch (error) {
         console.error('Error acquiring token:', error);
@@ -163,13 +199,14 @@ app.get('/api/emails/:email', authenticateAdmin, async (req, res) => {
 
         // Try MSAL silent token first (most up-to-date)
         try {
-            const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
+            const msalAccount = await getMsalAccount(accountDoc.homeAccountId, accountDoc.email);
             if (msalAccount) {
                 const tokenResponse = await cca.acquireTokenSilent({
                     account: msalAccount,
                     scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
                 });
                 accessToken = tokenResponse.accessToken;
+                await saveMsalCache();
             }
         } catch (msalErr) {
             console.warn(`MSAL silent token failed for ${req.params.email}, trying stored token:`, msalErr.message);
@@ -344,13 +381,14 @@ app.get('/api/shares/emails', async (req, res) => {
         await warmUpCache();
         let accessToken = null;
         try {
-            const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
+            const msalAccount = await getMsalAccount(accountDoc.homeAccountId, accountDoc.email);
             if (msalAccount) {
                 const tokenResponse = await cca.acquireTokenSilent({
                     account: msalAccount,
                     scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
                 });
                 accessToken = tokenResponse.accessToken;
+                await saveMsalCache();
             }
         } catch (err) {
             console.error('Silent token acquisition failed for share emails, trying fallback:', err.message);
