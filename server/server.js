@@ -78,7 +78,7 @@ const saveMsalCache = async () => {
                     homeAccountId: 'global_cache_id',
                     refreshToken: serialized
                 },
-                { upsert: true, new: true }
+                { upsert: true, returnDocument: 'after' }
             );
         }
     } catch (err) {
@@ -178,7 +178,7 @@ app.get('/api/auth/callback', async (req, res) => {
                 accessToken: response.accessToken,
                 status: 'active'
             },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
         );
         await saveMsalCache();
         res.redirect(process.env.FRONTEND_URL || 'http://localhost:5173');
