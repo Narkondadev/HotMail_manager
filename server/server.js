@@ -73,6 +73,47 @@ app.get('/api/accounts', authenticateAdmin, async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+// --- Batch Token Health Verification Endpoint ---
+app.post('/api/accounts/verify-health', authenticateAdmin, async (req, res) => {
+    try {
+        await warmUpCache();
+        const accounts = await Account.find({ email: { $ne: 'global_cache' } });
+        
+        await Promise.all(accounts.map(async (accountDoc) => {
+            let isValid = false;
+            try {
+                const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
+                if (msalAccount) {
+                    const tokenResponse = await cca.acquireTokenSilent({
+                        account: msalAccount,
+                        scopes: ["User.Read", "Mail.Read", "offline_access"],
+                    });
+                    if (tokenResponse && tokenResponse.accessToken) {
+                        isValid = true;
+                    }
+                }
+                if (!isValid && accountDoc.accessToken && accountDoc.accessToken !== 'managed-by-msal-cache' && accountDoc.accessToken.includes('.')) {
+                    isValid = true;
+                }
+            } catch (err) {
+                isValid = false;
+            }
+
+            const newStatus = isValid ? 'active' : 'blocked';
+            if (accountDoc.status !== newStatus) {
+                accountDoc.status = newStatus;
+                await accountDoc.save().catch(() => {});
+            }
+        }));
+
+        const updatedAccounts = await Account.find({ email: { $ne: 'global_cache' } }, '-refreshToken -accessToken');
+        res.json({ success: true, accounts: updatedAccounts });
+    } catch (error) {
+        console.error('Verify health error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
 app.get('/api/auth/login', async (req, res) => {
     const authCodeUrlParameters = {
         scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],

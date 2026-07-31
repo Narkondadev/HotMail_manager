@@ -25,6 +25,8 @@ export default function App() {
   const [shareHotmail, setShareHotmail] = useState('');
   const [shares, setShares] = useState([]);
   const [isAddingShare, setIsAddingShare] = useState(false);
+  const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('all');
 
   // Client Portal specific state
   const [clientHotmail, setClientHotmail] = useState('');
@@ -227,11 +229,34 @@ export default function App() {
   };
 
 
+  const expiredCount = useMemo(() => accounts.filter(acc => acc.status === 'blocked').length, [accounts]);
+
   const filteredAccounts = useMemo(() => {
-    if (!accountSearchQuery) return accounts;
+    let list = accounts;
+    if (statusFilter === 'expired') {
+      list = list.filter(acc => acc.status === 'blocked');
+    }
+    if (!accountSearchQuery) return list;
     const query = accountSearchQuery.toLowerCase();
-    return accounts.filter(acc => acc.email.toLowerCase().includes(query));
-  }, [accounts, accountSearchQuery]);
+    return list.filter(acc => acc.email.toLowerCase().includes(query));
+  }, [accounts, accountSearchQuery, statusFilter]);
+
+  const handleVerifyAllTokens = async () => {
+    setIsCheckingHealth(true);
+    try {
+      const res = await adminFetch(`${API_URL}/api/accounts/verify-health`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.accounts) {
+          setAccounts(data.accounts);
+        }
+      }
+    } catch (err) {
+      console.error("Health check error:", err);
+    } finally {
+      setIsCheckingHealth(false);
+    }
+  };
 
   const currentAccountEmails = emails[selectedAccount] || [];
   const filteredEmails = useMemo(() => {
@@ -479,9 +504,36 @@ export default function App() {
           <span>Hotmail Manager</span>
         </div>
         <div className="sidebar-content">
-          <div style={{ margin: '15px 0 10px 5px', fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>
-            Added Hotmails
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '15px 5px 10px 5px' }}>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>
+              Added Hotmails ({accounts.length})
+            </div>
+            <button
+              onClick={handleVerifyAllTokens}
+              disabled={isCheckingHealth || accounts.length === 0}
+              style={{ background: 'none', border: '1px solid var(--border)', padding: '2px 8px', borderRadius: '4px', color: 'var(--accent)', cursor: isCheckingHealth ? 'not-allowed' : 'pointer', fontSize: '0.75rem', fontWeight: '600' }}
+              title="Scan all tokens for expiration"
+            >
+              {isCheckingHealth ? 'Scanning...' : '🔍 Scan Tokens'}
+            </button>
           </div>
+
+          {accounts.length > 0 && (
+            <div style={{ display: 'flex', gap: '6px', margin: '0 5px 10px 5px' }}>
+              <button
+                onClick={() => setStatusFilter('all')}
+                style={{ flex: 1, padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', backgroundColor: statusFilter === 'all' ? 'var(--accent)' : 'transparent', color: statusFilter === 'all' ? 'white' : 'var(--text-muted)' }}
+              >
+                All ({accounts.length})
+              </button>
+              <button
+                onClick={() => setStatusFilter('expired')}
+                style={{ flex: 1, padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', backgroundColor: statusFilter === 'expired' ? 'var(--danger)' : 'transparent', color: statusFilter === 'expired' ? 'white' : 'var(--text-muted)' }}
+              >
+                ⚠️ Expired ({expiredCount})
+              </button>
+            </div>
+          )}
           <div style={{ padding: '0 5px 15px 5px' }}>
             <div className="search-box" style={{ padding: '8px 12px', backgroundColor: 'var(--bg-dark)' }}>
               <Search size={16} color="var(--text-muted)" />
