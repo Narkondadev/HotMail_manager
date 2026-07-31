@@ -266,8 +266,8 @@ export default function App() {
     }
   };
 
-  const fetchClientEmails = async (email, otp) => {
-    setClientLoading(true);
+  const fetchClientEmails = async (email, otp, isSilent = false) => {
+    if (!isSilent) setClientLoading(true);
     try {
       const res = await fetch(`${API_URL}/api/shares/emails?hotmailEmail=${encodeURIComponent(email)}&otp=${encodeURIComponent(otp)}`);
       const data = await res.json();
@@ -289,7 +289,7 @@ export default function App() {
     } catch (err) {
       console.error("Failed to fetch client emails", err);
     } finally {
-      setClientLoading(false);
+      if (!isSilent) setClientLoading(false);
     }
   };
 
@@ -297,7 +297,7 @@ export default function App() {
     if (isClientPortal && clientVerified && clientShareInfo) {
       const interval = setInterval(() => {
         if (!document.hidden) {
-          fetchClientEmails(clientShareInfo.hotmailEmail, clientShareInfo.otp);
+          fetchClientEmails(clientShareInfo.hotmailEmail, clientShareInfo.otp, true);
         }
       }, 10000);
       return () => clearInterval(interval);
@@ -449,7 +449,13 @@ export default function App() {
                   </div>
                 ))
               ) : (
-                <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>No messages found.</div>
+                <div style={{ padding: '25px 15px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginBottom: '8px' }}>
+                    <span className="animate-pulse" style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981' }}></span>
+                    <span style={{ color: '#10b981', fontWeight: '600', fontSize: '0.75rem', textTransform: 'uppercase' }}>Auto-checking inbox every 10s</span>
+                  </div>
+                  No matching Netflix emails found yet.
+                </div>
               )}
             </div>
           </div>
