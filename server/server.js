@@ -143,6 +143,8 @@ app.get('/api/emails/:email', authenticateAdmin, async (req, res) => {
         }
 
         if (!accessToken) {
+            accountDoc.status = 'blocked';
+            await accountDoc.save().catch(() => {});
             return res.status(401).json({ error: 'Session expired. Please remove the account and add it again.' });
         }
 
@@ -153,6 +155,10 @@ app.get('/api/emails/:email', authenticateAdmin, async (req, res) => {
         });
         if (!graphResponse.ok) {
             const errText = await graphResponse.text();
+            if (graphResponse.status === 401 || errText.includes('Unauthorized') || errText.includes('invalid_grant')) {
+                accountDoc.status = 'blocked';
+                await accountDoc.save().catch(() => {});
+            }
             throw new Error(`Microsoft returned an error: ${graphResponse.statusText} - ${errText}`);
         }
         const data = await graphResponse.json();

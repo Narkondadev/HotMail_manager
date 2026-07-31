@@ -80,7 +80,9 @@ export default function App() {
     try {
       const response = await adminFetch(`${API_URL}/api/emails/${encodeURIComponent(email)}`);
       if (!response.ok) {
-        throw new Error('Failed to fetch emails');
+        const errData = await response.json().catch(() => ({}));
+        setAccounts(prev => prev.map(acc => acc.email === email ? { ...acc, status: 'blocked' } : acc));
+        throw new Error(errData.error || 'Failed to fetch emails');
       }
       const fetchedMessages = await response.json();
       const formattedEmails = fetchedMessages.map(msg => {
@@ -99,7 +101,7 @@ export default function App() {
       setEmails(prev => ({ ...prev, [email]: formattedEmails }));
     } catch (e) {
       console.error(`Failed to fetch emails for ${email}:`, e);
-      setError(`Failed to fetch emails for ${email}. Please log in again if the token expired.`);
+      setError(e.message || `Failed to fetch emails for ${email}.`);
     } finally {
       setIsLoading(false);
     }
