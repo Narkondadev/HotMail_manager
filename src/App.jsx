@@ -293,16 +293,7 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    if (isClientPortal && clientVerified && clientShareInfo) {
-      const interval = setInterval(() => {
-        if (!document.hidden) {
-          fetchClientEmails(clientShareInfo.hotmailEmail, clientShareInfo.otp);
-        }
-      }, 10000);
-      return () => clearInterval(interval);
-    }
-  }, [isClientPortal, clientVerified, clientShareInfo]);
+
   const filteredAccounts = useMemo(() => {
     if (!accountSearchQuery) return accounts;
     const query = accountSearchQuery.toLowerCase();
@@ -428,7 +419,16 @@ export default function App() {
                 "{clientShareInfo?.subjectQuery}"
               </span>
             </div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '10px' }}>Inbox Messages</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>Inbox Messages</div>
+              <button 
+                onClick={() => fetchClientEmails(clientShareInfo.hotmailEmail, clientShareInfo.otp)}
+                disabled={clientLoading}
+                style={{ background: 'none', border: '1px solid var(--border)', padding: '4px 10px', borderRadius: '6px', color: 'var(--accent)', cursor: clientLoading ? 'not-allowed' : 'pointer', fontSize: '0.75rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}
+              >
+                {clientLoading ? 'Refreshing...' : '↻ Refresh'}
+              </button>
+            </div>
             <div className="emails-container" style={{ padding: 0 }}>
               {clientLoading && clientEmails.length === 0 ? (
                 <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>Connecting to server...</div>
