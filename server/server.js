@@ -81,29 +81,27 @@ app.post('/api/accounts/verify-health', authenticateAdmin, async (req, res) => {
         const accounts = await Account.find({ email: { $ne: 'global_cache' } });
         
         await Promise.all(accounts.map(async (accountDoc) => {
-            let isValid = false;
             try {
                 const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
                 if (msalAccount) {
                     const tokenResponse = await cca.acquireTokenSilent({
                         account: msalAccount,
-                        scopes: ["User.Read", "Mail.Read", "offline_access"],
+                        scopes: ["User.Read", "offline_access"],
                     });
                     if (tokenResponse && tokenResponse.accessToken) {
-                        isValid = true;
+                        if (accountDoc.status === 'blocked') {
+                            accountDoc.status = 'active';
+                            await accountDoc.save().catch(() => {});
+                        }
                     }
                 }
-                if (!isValid && accountDoc.accessToken && accountDoc.accessToken !== 'managed-by-msal-cache' && accountDoc.accessToken.includes('.')) {
-                    isValid = true;
-                }
             } catch (err) {
-                isValid = false;
-            }
-
-            const newStatus = isValid ? 'active' : 'blocked';
-            if (accountDoc.status !== newStatus) {
-                accountDoc.status = newStatus;
-                await accountDoc.save().catch(() => {});
+                if (err.message && (err.message.includes('invalid_grant') || err.message.includes('AADSTS70000') || err.message.includes('AADSTS50173') || err.message.includes('interaction_required') || err.message.includes('Unauthorized'))) {
+                    if (accountDoc.status !== 'blocked') {
+                        accountDoc.status = 'blocked';
+                        await accountDoc.save().catch(() => {});
+                    }
+                }
             }
         }));
 
