@@ -104,63 +104,6 @@ export default function App() {
       setIsLoading(false);
     }
   };
-  const fetchAllEmails = async () => {
-    if (accounts.length === 0) return;
-    try {
-      const fetchPromises = accounts.map(async (account) => {
-        const email = account.email;
-        try {
-          const response = await adminFetch(`${API_URL}/api/emails/${encodeURIComponent(email)}`);
-          if (response.ok) {
-            const fetchedMessages = await response.json();
-            return { email, fetchedMessages };
-          }
-        } catch (err) {
-          console.error(`Failed background fetch for ${email}:`, err);
-        }
-        return null;
-      });
-      const results = await Promise.all(fetchPromises);
-      const newEmailsState = { ...emails };
-      let hasUpdates = false;
-      results.forEach(result => {
-        if (result && result.fetchedMessages) {
-          const formattedEmails = result.fetchedMessages.map(msg => {
-            const senderName = msg.sender?.emailAddress?.name || msg.sender?.emailAddress?.address || 'Unknown Sender';
-            const receivedDate = new Date(msg.receivedDateTime);
-            return {
-              id: msg.id,
-              accountId: result.email,
-              sender: senderName,
-              subject: msg.subject || '(No Subject)',
-              preview: msg.bodyPreview || '',
-              body: msg.body?.content || 'No content',
-              time: receivedDate.toLocaleDateString() + ' ' + receivedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              timestamp: receivedDate.getTime(),
-            };
-          });
-          newEmailsState[result.email] = formattedEmails;
-          hasUpdates = true;
-        }
-      });
-      if (hasUpdates) {
-        setEmails(newEmailsState);
-      }
-    } catch (e) {
-      console.error('Failed to fetch all emails:', e);
-    }
-  };
-  useEffect(() => {
-    if (accounts.length > 0) {
-      fetchAllEmails();
-      const intervalId = setInterval(() => {
-        if (!document.hidden) {
-          fetchAllEmails();
-        }
-      }, 30000);
-      return () => clearInterval(intervalId);
-    }
-  }, [accounts]);
   const allEmails = useMemo(() => {
     let combined = [];
     Object.values(emails).forEach(accEmails => {
