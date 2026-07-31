@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Mail, Search, Plus, Trash2, User, LogOut, ArrowLeft, Send, AlertCircle, CheckCircle2, Clock, Lock, KeyRound } from 'lucide-react';
+import { Mail, Search, Plus, Trash2, User, LogOut, ArrowLeft, Send, AlertCircle, CheckCircle2, Clock, Lock, KeyRound, RefreshCw, ShieldAlert } from 'lucide-react';
 import './index.css';
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(localStorage.getItem('isLoggedIn') === 'true');
@@ -504,36 +504,84 @@ export default function App() {
           <span>Hotmail Manager</span>
         </div>
         <div className="sidebar-content">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '15px 5px 10px 5px' }}>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>
-              Added Hotmails ({accounts.length})
+          <div style={{ padding: '0 5px 12px 5px', borderBottom: '1px solid var(--border)', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.5px' }}>
+                Added Hotmails ({accounts.length})
+              </span>
+              <button
+                onClick={handleVerifyAllTokens}
+                disabled={isCheckingHealth || accounts.length === 0}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  background: 'rgba(16, 185, 129, 0.1)',
+                  border: '1px solid rgba(16, 185, 129, 0.25)',
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  color: '#10b981',
+                  cursor: isCheckingHealth ? 'not-allowed' : 'pointer',
+                  fontSize: '0.75rem',
+                  fontWeight: '600',
+                  transition: 'all 0.2s'
+                }}
+                title="Scan all tokens for expiration"
+              >
+                <RefreshCw size={13} style={{ animation: isCheckingHealth ? 'spin 1s linear infinite' : 'none' }} />
+                {isCheckingHealth ? 'Scanning...' : 'Scan Tokens'}
+              </button>
             </div>
-            <button
-              onClick={handleVerifyAllTokens}
-              disabled={isCheckingHealth || accounts.length === 0}
-              style={{ background: 'none', border: '1px solid var(--border)', padding: '2px 8px', borderRadius: '4px', color: 'var(--accent)', cursor: isCheckingHealth ? 'not-allowed' : 'pointer', fontSize: '0.75rem', fontWeight: '600' }}
-              title="Scan all tokens for expiration"
-            >
-              {isCheckingHealth ? 'Scanning...' : '🔍 Scan Tokens'}
-            </button>
-          </div>
 
-          {accounts.length > 0 && (
-            <div style={{ display: 'flex', gap: '6px', margin: '0 5px 10px 5px' }}>
-              <button
-                onClick={() => setStatusFilter('all')}
-                style={{ flex: 1, padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', backgroundColor: statusFilter === 'all' ? 'var(--accent)' : 'transparent', color: statusFilter === 'all' ? 'white' : 'var(--text-muted)' }}
-              >
-                All ({accounts.length})
-              </button>
-              <button
-                onClick={() => setStatusFilter('expired')}
-                style={{ flex: 1, padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', backgroundColor: statusFilter === 'expired' ? 'var(--danger)' : 'transparent', color: statusFilter === 'expired' ? 'white' : 'var(--text-muted)' }}
-              >
-                ⚠️ Expired ({expiredCount})
-              </button>
-            </div>
-          )}
+            {accounts.length > 0 && (
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  onClick={() => setStatusFilter('all')}
+                  style={{
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '5px',
+                    padding: '6px 8px',
+                    borderRadius: '6px',
+                    border: statusFilter === 'all' ? '1px solid var(--accent)' : '1px solid var(--border)',
+                    fontSize: '0.75rem',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    backgroundColor: statusFilter === 'all' ? 'var(--accent)' : 'var(--bg-dark)',
+                    color: statusFilter === 'all' ? 'white' : 'var(--text-muted)',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <CheckCircle2 size={13} />
+                  All ({accounts.length})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('expired')}
+                  style={{
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '5px',
+                    padding: '6px 8px',
+                    borderRadius: '6px',
+                    border: statusFilter === 'expired' ? '1px solid var(--danger)' : '1px solid var(--border)',
+                    fontSize: '0.75rem',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    backgroundColor: statusFilter === 'expired' ? 'var(--danger)' : 'var(--bg-dark)',
+                    color: statusFilter === 'expired' ? 'white' : 'var(--text-muted)',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <ShieldAlert size={13} color={statusFilter === 'expired' ? 'white' : 'var(--danger)'} />
+                  Expired ({expiredCount})
+                </button>
+              </div>
+            )}
+          </div>
           <div style={{ padding: '0 5px 15px 5px' }}>
             <div className="search-box" style={{ padding: '8px 12px', backgroundColor: 'var(--bg-dark)' }}>
               <Search size={16} color="var(--text-muted)" />
