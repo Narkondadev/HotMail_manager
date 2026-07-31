@@ -615,9 +615,12 @@ export default function App() {
                 <User size={18} />
                 <span className="account-email" title={account.email}>{account.email}</span>
                 {account.status === 'blocked' ? (
-                  <AlertCircle size={14} color="var(--error)" style={{ marginLeft: '4px' }} title="Account locked or requires re-authentication" />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginLeft: 'auto' }} title="Token Expired - Needs Re-login">
+                    <div style={{ width: '8px', height: '8px', backgroundColor: '#ef4444', borderRadius: '50%', boxShadow: '0 0 6px rgba(239, 68, 68, 0.6)' }}></div>
+                    <span style={{ fontSize: '0.7rem', color: '#ef4444', fontWeight: '600' }}>Expired</span>
+                  </div>
                 ) : (
-                  <div style={{ width: '8px', height: '8px', backgroundColor: '#10b981', borderRadius: '50%', marginLeft: '4px' }} title="Account Active and Healthy"></div>
+                  <div style={{ width: '8px', height: '8px', backgroundColor: '#10b981', borderRadius: '50%', marginLeft: 'auto', boxShadow: '0 0 6px rgba(16, 185, 129, 0.4)' }} title="Account Active and Healthy"></div>
                 )}
               </div>
               <button
