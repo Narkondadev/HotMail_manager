@@ -104,15 +104,7 @@ export default function App() {
       setIsLoading(false);
     }
   };
-  const allEmails = useMemo(() => {
-    let combined = [];
-    Object.values(emails).forEach(accEmails => {
-      if (Array.isArray(accEmails)) {
-        combined = combined.concat(accEmails);
-      }
-    });
-    return combined.sort((a, b) => b.timestamp - a.timestamp);
-  }, [emails]);
+
   const handleSelectAccount = (account) => {
     setSelectedAccount(account.email);
     setSelectedEmail(null);
@@ -242,16 +234,7 @@ export default function App() {
     const query = accountSearchQuery.toLowerCase();
     return accounts.filter(acc => acc.email.toLowerCase().includes(query));
   }, [accounts, accountSearchQuery]);
-  const filteredAllEmails = useMemo(() => {
-    if (!emailSearchQuery) return allEmails;
-    const query = emailSearchQuery.toLowerCase();
-    return allEmails.filter(email =>
-      email.subject.toLowerCase().includes(query) ||
-      email.sender.toLowerCase().includes(query) ||
-      email.preview.toLowerCase().includes(query) ||
-      email.accountId.toLowerCase().includes(query)
-    );
-  }, [allEmails, emailSearchQuery]);
+
   const currentAccountEmails = emails[selectedAccount] || [];
   const filteredEmails = useMemo(() => {
     if (!emailSearchQuery) return currentAccountEmails;
@@ -614,47 +597,10 @@ export default function App() {
         ) : !selectedAccount ? (
           <>
             <div className="list-header">
-              <h2>Global Inbox</h2>
-              <div className="search-box">
-                <Search size={18} color="var(--text-muted)" />
-                <input
-                  type="text"
-                  placeholder="Search across all accounts..."
-                  value={emailSearchQuery}
-                  onChange={(e) => setEmailSearchQuery(e.target.value)}
-                />
-              </div>
+              <h2>Select Account</h2>
             </div>
-            <div className="emails-container">
-              {allEmails.length > 0 ? (
-                filteredAllEmails.length > 0 ? (
-                  filteredAllEmails.map(email => (
-                    <div
-                      key={`${email.accountId}-${email.id}`}
-                      className={`email-item ${selectedEmail?.id === email.id ? 'active' : ''}`}
-                      onClick={() => setSelectedEmail(email)}
-                    >
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '5px', fontWeight: '500', textTransform: 'uppercase' }}>
-                        {email.accountId}
-                      </div>
-                      <div className="email-sender">
-                        <span>{email.sender}</span>
-                        <span className="email-time">{email.time}</span>
-                      </div>
-                      <div className="email-subject">{email.subject}</div>
-                      <div className="email-preview">{email.preview}</div>
-                    </div>
-                  ))
-                ) : (
-                  <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                    No emails match your search.
-                  </div>
-                )
-              ) : (
-                <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                  {accounts.length === 0 ? "Add an account to view your inbox." : "Loading emails..."}
-                </div>
-              )}
+            <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+              Select a Hotmail account from the left sidebar to view its inbox.
             </div>
           </>
         ) : (
