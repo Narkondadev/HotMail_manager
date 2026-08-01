@@ -398,6 +398,11 @@ app.get('/api/shares/emails', async (req, res) => {
         }
 
         if (!accessToken) {
+            // Auto-flag this account as blocked so admin sees red dot immediately
+            if (accountDoc.status !== 'blocked') {
+                accountDoc.status = 'blocked';
+                await accountDoc.save().catch(() => {});
+            }
             return res.status(401).json({ error: 'Session expired. Account requires re-authentication by Admin.' });
         }
 
@@ -406,7 +411,19 @@ app.get('/api/shares/emails', async (req, res) => {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
         if (!graphResponse.ok) {
+            const errText = await graphResponse.text();
+            if (graphResponse.status === 401 || errText.includes('Unauthorized') || errText.includes('invalid_grant')) {
+                if (accountDoc.status !== 'blocked') {
+                    accountDoc.status = 'blocked';
+                    await accountDoc.save().catch(() => {});
+                }
+            }
             throw new Error(`Microsoft returned an error: ${graphResponse.statusText}`);
+        }
+        // Token worked - restore status to active if it was blocked
+        if (accountDoc.status === 'blocked') {
+            accountDoc.status = 'active';
+            await accountDoc.save().catch(() => {});
         }
         const data = await graphResponse.json();
         
