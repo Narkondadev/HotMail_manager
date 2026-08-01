@@ -114,13 +114,9 @@ app.post('/api/accounts/verify-health', authenticateAdmin, async (req, res) => {
         await warmUpCache(true);
         const accounts = await Account.find({ email: { $ne: 'global_cache' } });
 
-        const BATCH_SIZE = 5;
-        const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-        // Process accounts in batches of 5 (prevents RAM overflow)
-        for (let i = 0; i < accounts.length; i += BATCH_SIZE) {
-            const batch = accounts.slice(i, i + BATCH_SIZE);
-
+        const batchSize = 5;
+        for (let i = 0; i < accounts.length; i += batchSize) {
+            const batch = accounts.slice(i, i + batchSize);
             await Promise.allSettled(batch.map(async (accountDoc) => {
                 let accessToken = null;
                 let tokenValid = false;
@@ -161,10 +157,10 @@ app.post('/api/accounts/verify-health', authenticateAdmin, async (req, res) => {
                     await accountDoc.save().catch(() => {});
                 }
             }));
-
-            // Wait 500ms between batches to keep RAM low
-            if (i + BATCH_SIZE < accounts.length) {
-                await delay(500);
+            
+            // Wait 500ms before starting the next batch to allow garbage collector to clean up RAM
+            if (i + batchSize < accounts.length) {
+                await new Promise(resolve => setTimeout(resolve, 500));
             }
         }
 
