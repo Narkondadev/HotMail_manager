@@ -13,9 +13,8 @@ app.use(express.json());
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => {
     console.log('Connected to MongoDB');
-    Share.collection.dropIndex('otp_1').catch(() => {
-      // Ignore if index doesn't exist
-    });
+    Share.collection.dropIndex('otp_1').catch(() => {});
+    Share.collection.dropIndex('createdAt_1').catch(() => {});
   })
   .catch(err => console.error('MongoDB connection error:', err));
 
