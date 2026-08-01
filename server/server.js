@@ -109,10 +109,14 @@ app.get('/api/accounts', authenticateAdmin, async (req, res) => {
 // --- Batch Token Health Verification Endpoint ---
 app.post('/api/accounts/verify-health', authenticateAdmin, async (req, res) => {
     try {
-        await warmUpCache();
+        // Force reload MSAL cache from MongoDB on every scan
+        isCacheWarmed = false;
+        await warmUpCache(true);
         const accounts = await Account.find({ email: { $ne: 'global_cache' } });
-        
-        await Promise.all(accounts.map(async (accountDoc) => {
+
+        const results = await Promise.allSettled(accounts.map(async (accountDoc) => {
+            let accessToken = null;
+            let tokenValid = false;
             try {
                 const msalAccount = await getMsalAccount(accountDoc.homeAccountId, accountDoc.email);
                 if (msalAccount) {
@@ -121,21 +125,36 @@ app.post('/api/accounts/verify-health', authenticateAdmin, async (req, res) => {
                         scopes: ["User.Read", "offline_access"],
                     });
                     if (tokenResponse && tokenResponse.accessToken) {
-                        if (accountDoc.status === 'blocked') {
-                            accountDoc.status = 'active';
-                            await accountDoc.save().catch(() => {});
-                        }
+                        accessToken = tokenResponse.accessToken;
                     }
+                }
+                // Fallback to stored accessToken if MSAL silent failed
+                if (!accessToken && accountDoc.accessToken && accountDoc.accessToken !== 'managed-by-msal-cache' && accountDoc.accessToken.includes('.')) {
+                    accessToken = accountDoc.accessToken;
                 }
             } catch (err) {
-                if (err.message && (err.message.includes('invalid_grant') || err.message.includes('AADSTS70000') || err.message.includes('AADSTS50173') || err.message.includes('interaction_required') || err.message.includes('Unauthorized'))) {
-                    if (accountDoc.status !== 'blocked') {
-                        accountDoc.status = 'blocked';
-                        await accountDoc.save().catch(() => {});
-                    }
+                console.warn(`Token fetch error for ${accountDoc.email}:`, err.message);
+            }
+
+            // Verify the token is truly valid by making a lightweight Microsoft Graph call
+            if (accessToken) {
+                try {
+                    const testResponse = await fetch('https://graph.microsoft.com/v1.0/me?$select=id', {
+                        headers: { 'Authorization': `Bearer ${accessToken}` }
+                    });
+                    tokenValid = testResponse.ok;
+                } catch (e) {
+                    tokenValid = false;
                 }
             }
+
+            const newStatus = tokenValid ? 'active' : 'blocked';
+            if (accountDoc.status !== newStatus) {
+                accountDoc.status = newStatus;
+                await accountDoc.save().catch(() => {});
+            }
         }));
+
         await saveMsalCache();
 
         const updatedAccounts = await Account.find({ email: { $ne: 'global_cache' } }, '-refreshToken -accessToken');
