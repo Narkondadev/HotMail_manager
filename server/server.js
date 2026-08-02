@@ -114,10 +114,10 @@ app.post('/api/accounts/verify-health', authenticateAdmin, async (req, res) => {
         await warmUpCache(true);
         const accounts = await Account.find({ email: { $ne: 'global_cache' } });
 
-        const batchSize = 5;
-        for (let i = 0; i < accounts.length; i += batchSize) {
-            const batch = accounts.slice(i, i + batchSize);
-            await Promise.allSettled(batch.map(async (accountDoc) => {
+        const BATCH_SIZE = 5;
+        for (let i = 0; i < accounts.length; i += BATCH_SIZE) {
+            const batch = accounts.slice(i, i + BATCH_SIZE);
+            await Promise.all(batch.map(async (accountDoc) => {
                 let accessToken = null;
                 let tokenValid = false;
                 try {
@@ -131,7 +131,6 @@ app.post('/api/accounts/verify-health', authenticateAdmin, async (req, res) => {
                             accessToken = tokenResponse.accessToken;
                         }
                     }
-                    // Fallback to stored accessToken if MSAL silent failed
                     if (!accessToken && accountDoc.accessToken && accountDoc.accessToken !== 'managed-by-msal-cache' && accountDoc.accessToken.includes('.')) {
                         accessToken = accountDoc.accessToken;
                     }
@@ -139,7 +138,6 @@ app.post('/api/accounts/verify-health', authenticateAdmin, async (req, res) => {
                     console.warn(`Token fetch error for ${accountDoc.email}:`, err.message);
                 }
 
-                // Verify the token is truly valid by making a lightweight Microsoft Graph call
                 if (accessToken) {
                     try {
                         const testResponse = await fetch('https://graph.microsoft.com/v1.0/me?$select=id', {
@@ -157,10 +155,9 @@ app.post('/api/accounts/verify-health', authenticateAdmin, async (req, res) => {
                     await accountDoc.save().catch(() => {});
                 }
             }));
-            
-            // Wait 500ms before starting the next batch to allow garbage collector to clean up RAM
-            if (i + batchSize < accounts.length) {
-                await new Promise(resolve => setTimeout(resolve, 500));
+
+            if (i + BATCH_SIZE < accounts.length) {
+                await new Promise(resolve => setTimeout(resolve, 300));
             }
         }
 
