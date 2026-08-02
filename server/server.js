@@ -107,6 +107,65 @@ app.get('/api/accounts', authenticateAdmin, async (req, res) => {
 });
 
 
+
+// --- Individual Account Token Verification Endpoint ---
+app.post('/api/accounts/verify-one', authenticateAdmin, async (req, res) => {
+    const { email } = req.body;
+    if (!email) {
+        return res.status(400).json({ error: 'Email parameter required' });
+    }
+    try {
+        await warmUpCache();
+        const accountDoc = await Account.findOne({ email: email.trim().toLowerCase() });
+        if (!accountDoc) {
+            return res.status(404).json({ error: 'Account not found' });
+        }
+
+        let accessToken = null;
+        let tokenValid = false;
+        const scopes = ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"];
+
+        try {
+            const msalAccount = await getMsalAccount(accountDoc.homeAccountId, accountDoc.email);
+            if (msalAccount) {
+                const tokenResponse = await cca.acquireTokenSilent({
+                    account: msalAccount,
+                    scopes: scopes,
+                });
+                if (tokenResponse && tokenResponse.accessToken) {
+                    accessToken = tokenResponse.accessToken;
+                }
+            }
+            if (!accessToken && accountDoc.accessToken && accountDoc.accessToken !== 'managed-by-msal-cache' && accountDoc.accessToken.includes('.')) {
+                accessToken = accountDoc.accessToken;
+            }
+        } catch (err) {
+            console.warn(`Silent token acquisition failed for ${accountDoc.email}:`, err.message);
+        }
+
+        if (accessToken) {
+            try {
+                const testResponse = await fetch('https://graph.microsoft.com/v1.0/me?$select=id', {
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
+                });
+                tokenValid = testResponse.ok;
+            } catch (e) {
+                tokenValid = false;
+            }
+        }
+
+        const newStatus = tokenValid ? 'active' : 'blocked';
+        accountDoc.status = newStatus;
+        await accountDoc.save().catch(() => {});
+        await saveMsalCache();
+
+        res.json({ success: true, email: accountDoc.email, status: accountDoc.status });
+    } catch (error) {
+        console.error('Verify-one health error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.get('/api/auth/login', async (req, res) => {
     const authCodeUrlParameters = {
         scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],

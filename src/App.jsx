@@ -37,6 +37,7 @@ export default function App() {
   const [clientLoading, setClientLoading] = useState(false);
   const [clientError, setClientError] = useState('');
   const [selectedClientEmail, setSelectedClientEmail] = useState(null);
+  const [testingEmail, setTestingEmail] = useState(null);
 
   const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   const API_URL = isLocalhost ? 'http://localhost:5001' : 'https://hotmail-manager-ppna.onrender.com';
@@ -242,6 +243,26 @@ export default function App() {
   }, [accounts, accountSearchQuery, statusFilter]);
 
 
+
+  const handleTestSingleAccount = async (email, e) => {
+    e.stopPropagation();
+    setTestingEmail(email);
+    try {
+      const res = await adminFetch(`${API_URL}/api/accounts/verify-one`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAccounts(prev => prev.map(acc => acc.email === data.email ? { ...acc, status: data.status } : acc));
+      }
+    } catch (err) {
+      console.error("Failed to test account:", err);
+    } finally {
+      setTestingEmail(null);
+    }
+  };
 
   const currentAccountEmails = emails[selectedAccount] || [];
   const filteredEmails = useMemo(() => {
@@ -586,13 +607,38 @@ export default function App() {
                   <div style={{ width: '8px', height: '8px', backgroundColor: '#10b981', borderRadius: '50%', marginLeft: 'auto', boxShadow: '0 0 6px rgba(16, 185, 129, 0.4)' }} title="Account Active and Healthy"></div>
                 )}
               </div>
-              <button
-                className="remove-btn"
-                onClick={(e) => handleLogout(account.email, e)}
-                title="Remove account"
-              >
-                <Trash2 size={16} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <button
+                  onClick={(e) => handleTestSingleAccount(account.email, e)}
+                  disabled={testingEmail === account.email}
+                  title="Test token connection with Microsoft"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '3px 8px',
+                    borderRadius: '5px',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    color: testingEmail === account.email ? 'var(--text-muted)' : '#38bdf8',
+                    fontSize: '0.72rem',
+                    fontWeight: '600',
+                    cursor: testingEmail === account.email ? 'not-allowed' : 'pointer',
+                    marginRight: '6px',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <RefreshCw size={12} style={{ animation: testingEmail === account.email ? 'spin 1s linear infinite' : 'none' }} />
+                  <span>{testingEmail === account.email ? 'Testing...' : 'Test'}</span>
+                </button>
+                <button
+                  className="remove-btn"
+                  onClick={(e) => handleLogout(account.email, e)}
+                  title="Remove account"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
             </div>
           ))}
         </div>
