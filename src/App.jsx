@@ -241,22 +241,7 @@ export default function App() {
     return list.filter(acc => acc.email.toLowerCase().includes(query));
   }, [accounts, accountSearchQuery, statusFilter]);
 
-  const handleVerifyAllTokens = async () => {
-    setIsCheckingHealth(true);
-    try {
-      const res = await adminFetch(`${API_URL}/api/accounts/verify-health`, { method: 'POST' });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.accounts) {
-          setAccounts(data.accounts);
-        }
-      }
-    } catch (err) {
-      console.error("Health check error:", err);
-    } finally {
-      setIsCheckingHealth(false);
-    }
-  };
+
 
   const currentAccountEmails = emails[selectedAccount] || [];
   const filteredEmails = useMemo(() => {
@@ -509,28 +494,6 @@ export default function App() {
               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.5px' }}>
                 Added Hotmails
               </span>
-              <button
-                onClick={handleVerifyAllTokens}
-                disabled={isCheckingHealth || accounts.length === 0}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  background: 'rgba(16, 185, 129, 0.1)',
-                  border: '1px solid rgba(16, 185, 129, 0.25)',
-                  padding: '4px 10px',
-                  borderRadius: '6px',
-                  color: '#10b981',
-                  cursor: isCheckingHealth ? 'not-allowed' : 'pointer',
-                  fontSize: '0.75rem',
-                  fontWeight: '600',
-                  transition: 'all 0.2s'
-                }}
-                title="Scan all tokens for expiration"
-              >
-                <RefreshCw size={13} style={{ animation: isCheckingHealth ? 'spin 1s linear infinite' : 'none' }} />
-                {isCheckingHealth ? 'Scanning...' : 'Scan Tokens'}
-              </button>
             </div>
 
             {accounts.length > 0 && (

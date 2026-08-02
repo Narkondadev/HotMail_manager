@@ -106,70 +106,7 @@ app.get('/api/accounts', authenticateAdmin, async (req, res) => {
     }
 });
 
-// --- Batch Token Health Verification Endpoint ---
-app.post('/api/accounts/verify-health', authenticateAdmin, async (req, res) => {
-    try {
-        // Force reload MSAL cache from MongoDB on every scan
-        isCacheWarmed = false;
-        await warmUpCache(true);
-        const accounts = await Account.find({ email: { $ne: 'global_cache' } });
 
-        const BATCH_SIZE = 5;
-        for (let i = 0; i < accounts.length; i += BATCH_SIZE) {
-            const batch = accounts.slice(i, i + BATCH_SIZE);
-            await Promise.all(batch.map(async (accountDoc) => {
-                let accessToken = null;
-                let tokenValid = false;
-                try {
-                    const msalAccount = await getMsalAccount(accountDoc.homeAccountId, accountDoc.email);
-                    if (msalAccount) {
-                        const tokenResponse = await cca.acquireTokenSilent({
-                            account: msalAccount,
-                            scopes: ["User.Read", "offline_access"],
-                        });
-                        if (tokenResponse && tokenResponse.accessToken) {
-                            accessToken = tokenResponse.accessToken;
-                        }
-                    }
-                    if (!accessToken && accountDoc.accessToken && accountDoc.accessToken !== 'managed-by-msal-cache' && accountDoc.accessToken.includes('.')) {
-                        accessToken = accountDoc.accessToken;
-                    }
-                } catch (err) {
-                    console.warn(`Token fetch error for ${accountDoc.email}:`, err.message);
-                }
-
-                if (accessToken) {
-                    try {
-                        const testResponse = await fetch('https://graph.microsoft.com/v1.0/me?$select=id', {
-                            headers: { 'Authorization': `Bearer ${accessToken}` }
-                        });
-                        tokenValid = testResponse.ok;
-                    } catch (e) {
-                        tokenValid = false;
-                    }
-                }
-
-                const newStatus = tokenValid ? 'active' : 'blocked';
-                if (accountDoc.status !== newStatus) {
-                    accountDoc.status = newStatus;
-                    await accountDoc.save().catch(() => {});
-                }
-            }));
-
-            if (i + BATCH_SIZE < accounts.length) {
-                await new Promise(resolve => setTimeout(resolve, 300));
-            }
-        }
-
-        await saveMsalCache();
-
-        const updatedAccounts = await Account.find({ email: { $ne: 'global_cache' } }, '-refreshToken -accessToken');
-        res.json({ success: true, accounts: updatedAccounts });
-    } catch (error) {
-        console.error('Verify health error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
 app.get('/api/auth/login', async (req, res) => {
     const authCodeUrlParameters = {
         scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
