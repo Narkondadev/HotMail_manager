@@ -16,10 +16,6 @@ const CustomerSchema = new mongoose.Schema({
         type: String,
         trim: true
     }],
-    subjectQuery: {
-        type: String,
-        default: ''
-    },
     createdAt: {
         type: Date,
         default: Date.now

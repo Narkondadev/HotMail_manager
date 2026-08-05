@@ -330,7 +330,7 @@ app.get('/api/customers', authenticateAdmin, async (req, res) => {
 });
 
 app.post('/api/customers', authenticateAdmin, async (req, res) => {
-    const { name, otp, hotmailEmails, subjectQuery } = req.body;
+    const { name, otp, hotmailEmails } = req.body;
     if (!name || !otp || !hotmailEmails || !Array.isArray(hotmailEmails) || hotmailEmails.length === 0) {
         return res.status(400).json({ error: 'Customer name, 6-digit OTP, and at least one assigned Hotmail are required.' });
     }
@@ -338,8 +338,7 @@ app.post('/api/customers', authenticateAdmin, async (req, res) => {
         const newCustomer = new Customer({
             name: name.trim(),
             otp: otp.trim(),
-            hotmailEmails: hotmailEmails.map(e => e.trim().toLowerCase()),
-            subjectQuery: (subjectQuery || '').trim()
+            hotmailEmails: hotmailEmails.map(e => e.trim().toLowerCase())
         });
         await newCustomer.save();
         res.json(newCustomer);
@@ -374,8 +373,7 @@ app.post('/api/customers/verify', async (req, res) => {
                 _id: customer._id,
                 name: customer.name,
                 otp: customer.otp,
-                hotmailEmails: customer.hotmailEmails,
-                subjectQuery: customer.subjectQuery
+                hotmailEmails: customer.hotmailEmails
             }
         });
     } catch (error) {

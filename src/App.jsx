@@ -33,7 +33,6 @@ export default function App() {
   const [customerName, setCustomerName] = useState('');
   const [customerOtp, setCustomerOtp] = useState('');
   const [customerHotmails, setCustomerHotmails] = useState([]);
-  const [customerSubjectQuery, setCustomerSubjectQuery] = useState('');
   const [customers, setCustomers] = useState([]);
   const [isAddingCustomer, setIsAddingCustomer] = useState(false);
 
@@ -219,15 +218,13 @@ export default function App() {
         body: JSON.stringify({ 
           name: customerName,
           otp: customerOtp.trim(),
-          hotmailEmails: customerHotmails,
-          subjectQuery: customerSubjectQuery
+          hotmailEmails: customerHotmails
         })
       });
       if (response.ok) {
         setCustomerName('');
         setCustomerOtp('');
         setCustomerHotmails([]);
-        setCustomerSubjectQuery('');
         fetchCustomers();
       }
     } catch (err) {
@@ -829,17 +826,6 @@ export default function App() {
                       value={customerOtp}
                       onChange={(e) => setCustomerOtp(e.target.value)}
                       required
-                    />
-                  </div>
-                  <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Subject Filter (Optional)</label>
-                    <input
-                      type="text"
-                      className="search-box"
-                      placeholder="e.g. Netflix (leave blank for all messages)"
-                      style={{ width: '100%', padding: '10px' }}
-                      value={customerSubjectQuery}
-                      onChange={(e) => setCustomerSubjectQuery(e.target.value)}
                     />
                   </div>
                   <div style={{ marginBottom: '20px' }}>
