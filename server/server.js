@@ -381,6 +381,65 @@ app.post('/api/customers/verify', async (req, res) => {
     }
 });
 
+app.post('/api/customers/emails', async (req, res) => {
+    const { customerOtp, hotmailEmail, subjectFilter } = req.body;
+    if (!customerOtp || !hotmailEmail) {
+        return res.status(400).json({ error: 'Customer Access OTP and Hotmail Email are required.' });
+    }
+    try {
+        const customer = await Customer.findOne({ otp: customerOtp.trim() });
+        if (!customer) {
+            return res.status(401).json({ error: 'Invalid Customer Access OTP.' });
+        }
+        const normalizedEmail = hotmailEmail.trim().toLowerCase();
+        if (!customer.hotmailEmails.map(e => e.toLowerCase()).includes(normalizedEmail)) {
+            return res.status(403).json({ error: 'This Hotmail address is not assigned to your Customer profile.' });
+        }
+
+        const accountDoc = await Account.findOne({ email: normalizedEmail });
+        if (!accountDoc) {
+            return res.status(404).json({ error: 'Hotmail account not found in system.' });
+        }
+
+        const tokenCache = cca.getTokenCache();
+        try {
+            await tokenCache.deserialize(accountDoc.msalCache);
+        } catch (e) {}
+
+        const accounts = await tokenCache.getAllAccounts();
+        const msalAccount = accounts.find(a => a.username.toLowerCase() === normalizedEmail);
+
+        if (!msalAccount) {
+            return res.status(401).json({ error: 'Account session expired. Please contact admin.' });
+        }
+
+        const tokenResponse = await cca.acquireTokenSilent({
+            scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
+            account: msalAccount
+        });
+
+        const filterParam = (subjectFilter || '').trim();
+        let graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=15&$select=id,sender,subject,bodyPreview,body,receivedDateTime`;
+        if (filterParam) {
+            graphUrl += `&$filter=contains(subject,'${encodeURIComponent(filterParam)}')`;
+        }
+
+        const fetchResponse = await fetch(graphUrl, {
+            headers: { Authorization: `Bearer ${tokenResponse.accessToken}` }
+        });
+
+        if (!fetchResponse.ok) {
+            const errText = await fetchResponse.text();
+            return res.status(fetchResponse.status).json({ error: `Microsoft Graph API error: ${errText}` });
+        }
+
+        const emailData = await fetchResponse.json();
+        res.json(emailData.value || []);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // --- SHARE ENDPOINTS ---
 app.get('/api/shares', authenticateAdmin, async (req, res) => {
     try {

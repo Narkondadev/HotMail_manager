@@ -40,6 +40,7 @@ export default function App() {
   // Client Portal specific state
   const [clientHotmail, setClientHotmail] = useState('');
   const [clientOtp, setClientOtp] = useState('');
+  const [clientFilterSubject, setClientFilterSubject] = useState('');
   const [clientVerified, setClientVerified] = useState(false);
   const [clientShareInfo, setClientShareInfo] = useState(null);
   const [clientCustomerInfo, setClientCustomerInfo] = useState(null);
@@ -264,19 +265,9 @@ export default function App() {
       });
       if (custRes.ok) {
         const custData = await custRes.json();
-        const customer = custData.customer;
-        setClientCustomerInfo(customer);
-        setClientAssignedHotmails(customer.hotmailEmails || []);
-        const firstEmail = customer.hotmailEmails[0];
-        setClientShareInfo({
-          hotmailEmail: firstEmail,
-          otp: customer.otp,
-          subjectQuery: customer.subjectQuery || 'All Messages'
-        });
+        setClientCustomerInfo(custData.customer);
+        setClientAssignedHotmails(custData.customer.hotmailEmails || []);
         setClientVerified(true);
-        if (firstEmail) {
-          fetchClientEmails(firstEmail, customer.otp);
-        }
         return;
       }
 
@@ -302,6 +293,48 @@ export default function App() {
       }
 
       setClientError('Invalid Customer Access OTP code.');
+    } catch (err) {
+      setClientError('Server error, please try again.');
+    } finally {
+      setClientLoading(false);
+    }
+  };
+
+  const handleFetchCustomerEmails = async (e) => {
+    if (e) e.preventDefault();
+    if (!clientHotmail) return;
+    setClientLoading(true);
+    setClientError('');
+    setSelectedClientEmail(null);
+    try {
+      const res = await fetch(`${API_URL}/api/customers/emails`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerOtp: clientOtp.trim(),
+          hotmailEmail: clientHotmail.trim(),
+          subjectFilter: clientFilterSubject.trim()
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const formatted = data.map(msg => {
+          const senderName = msg.sender?.emailAddress?.name || msg.sender?.emailAddress?.address || 'Unknown Sender';
+          const receivedDate = new Date(msg.receivedDateTime);
+          return {
+            id: msg.id,
+            sender: senderName,
+            subject: msg.subject || '(No Subject)',
+            preview: msg.bodyPreview || '',
+            body: msg.body?.content || 'No content',
+            time: receivedDate.toLocaleDateString() + ' ' + receivedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          };
+        });
+        setClientEmails(formatted);
+      } else {
+        setClientError(data.error || 'Failed to fetch emails for this Hotmail address.');
+        setClientEmails([]);
+      }
     } catch (err) {
       setClientError('Server error, please try again.');
     } finally {
@@ -472,36 +505,47 @@ export default function App() {
             </button>
           </div>
           <div className="sidebar-content" style={{ padding: '20px' }}>
-            <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: 'rgba(16,185,129,0.05)', borderRadius: '12px', border: '1px solid rgba(16,185,129,0.1)' }}>
-              {clientAssignedHotmails.length > 1 ? (
-                <div style={{ marginBottom: '12px' }}>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>Select Hotmail Account</div>
-                  <select
-                    value={clientShareInfo?.hotmailEmail}
-                    onChange={(e) => {
-                      const selected = e.target.value;
-                      setClientShareInfo(prev => ({ ...prev, hotmailEmail: selected }));
-                      setSelectedClientEmail(null);
-                      fetchClientEmails(selected, clientOtp);
-                    }}
-                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--bg-main)', color: 'var(--text-main)', fontSize: '0.9rem', fontWeight: '600' }}
-                  >
-                    {clientAssignedHotmails.map(email => (
-                      <option key={email} value={email}>{email}</option>
-                    ))}
-                  </select>
+            {clientCustomerInfo ? (
+              <form onSubmit={handleFetchCustomerEmails} style={{ marginBottom: '20px', padding: '15px', backgroundColor: 'rgba(16,185,129,0.05)', borderRadius: '12px', border: '1px solid rgba(16,185,129,0.1)' }}>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '10px' }}>Customer Inbox Search</div>
+                <div style={{ marginBottom: '10px' }}>
+                  <input
+                    type="email"
+                    placeholder="Enter Assigned Hotmail Address"
+                    value={clientHotmail}
+                    onChange={(e) => setClientHotmail(e.target.value)}
+                    required
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.85rem', outline: 'none', backgroundColor: 'var(--bg-main)' }}
+                  />
                 </div>
-              ) : (
-                <>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>Target Account</div>
-                  <div style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--text-main)', wordBreak: 'break-all' }} title={clientShareInfo?.hotmailEmail}>{clientShareInfo?.hotmailEmail}</div>
-                </>
-              )}
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', marginTop: '10px', marginBottom: '6px' }}>Filter matches subject</div>
-              <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '3px 10px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold' }}>
-                "{clientShareInfo?.subjectQuery}"
-              </span>
-            </div>
+                <div style={{ marginBottom: '12px' }}>
+                  <input
+                    type="text"
+                    placeholder="Filter Subject (e.g. Netflix)"
+                    value={clientFilterSubject}
+                    onChange={(e) => setClientFilterSubject(e.target.value)}
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.85rem', outline: 'none', backgroundColor: 'var(--bg-main)' }}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={clientLoading || !clientHotmail}
+                  style={{ width: '100%', padding: '10px', backgroundColor: 'var(--accent)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '600', cursor: clientLoading ? 'not-allowed' : 'pointer' }}
+                >
+                  {clientLoading ? 'Fetching...' : 'Fetch Inbox Feed'}
+                </button>
+                {clientError && <div style={{ color: 'var(--danger)', fontSize: '0.8rem', marginTop: '10px' }}>{clientError}</div>}
+              </form>
+            ) : (
+              <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: 'rgba(16,185,129,0.05)', borderRadius: '12px', border: '1px solid rgba(16,185,129,0.1)' }}>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>Target Account</div>
+                <div style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--text-main)', wordBreak: 'break-all' }} title={clientShareInfo?.hotmailEmail}>{clientShareInfo?.hotmailEmail}</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', marginTop: '10px', marginBottom: '6px' }}>Filter matches subject</div>
+                <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '3px 10px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                  "{clientShareInfo?.subjectQuery}"
+                </span>
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>Inbox Messages</div>
               <button 
