@@ -381,6 +381,77 @@ app.post('/api/customers/verify', async (req, res) => {
     }
 });
 
+app.post('/api/customers/unlock-inbox', async (req, res) => {
+    const { customerOtp, hotmailEmail, shareOtp } = req.body;
+    if (!customerOtp || !hotmailEmail || !shareOtp) {
+        return res.status(400).json({ error: 'Customer Access OTP, Hotmail Email, and Share OTP code are required.' });
+    }
+    try {
+        const customer = await Customer.findOne({ otp: customerOtp.trim() });
+        if (!customer) {
+            return res.status(401).json({ error: 'Invalid Security Access OTP.' });
+        }
+        const normalizedEmail = hotmailEmail.trim().toLowerCase();
+        if (!customer.hotmailEmails.map(e => e.toLowerCase()).includes(normalizedEmail)) {
+            return res.status(403).json({ error: 'Access Denied: This Hotmail address is not assigned to your Customer profile.' });
+        }
+
+        let subjectQuery = shareOtp.trim();
+        const shareRecord = await Share.findOne({ otp: subjectQuery });
+        if (shareRecord) {
+            subjectQuery = shareRecord.subjectQuery;
+        }
+
+        const accountDoc = await Account.findOne({ email: normalizedEmail });
+        if (!accountDoc) {
+            return res.status(404).json({ error: 'Hotmail account not found in system.' });
+        }
+
+        const tokenCache = cca.getTokenCache();
+        try {
+            await tokenCache.deserialize(accountDoc.msalCache);
+        } catch (e) {}
+
+        const accounts = await tokenCache.getAllAccounts();
+        const msalAccount = accounts.find(a => a.username.toLowerCase() === normalizedEmail);
+
+        if (!msalAccount) {
+            return res.status(401).json({ error: 'Account session expired. Please contact admin.' });
+        }
+
+        const tokenResponse = await cca.acquireTokenSilent({
+            scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
+            account: msalAccount
+        });
+
+        let graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=15&$select=id,sender,subject,bodyPreview,body,receivedDateTime`;
+        if (subjectQuery) {
+            graphUrl += `&$filter=contains(subject,'${encodeURIComponent(subjectQuery)}')`;
+        }
+
+        const fetchResponse = await fetch(graphUrl, {
+            headers: { Authorization: `Bearer ${tokenResponse.accessToken}` }
+        });
+
+        if (!fetchResponse.ok) {
+            const errText = await fetchResponse.text();
+            return res.status(fetchResponse.status).json({ error: `Microsoft Graph API error: ${errText}` });
+        }
+
+        const emailData = await fetchResponse.json();
+        res.json({
+            share: {
+                hotmailEmail: normalizedEmail,
+                subjectQuery: subjectQuery,
+                otp: shareOtp.trim()
+            },
+            emails: emailData.value || []
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.post('/api/customers/emails', async (req, res) => {
     const { customerOtp, hotmailEmail, subjectFilter } = req.body;
     if (!customerOtp || !hotmailEmail) {

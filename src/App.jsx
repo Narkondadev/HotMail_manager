@@ -38,9 +38,10 @@ export default function App() {
   const [isAddingCustomer, setIsAddingCustomer] = useState(false);
 
   // Client Portal specific state
+  const [isSecurityVerified, setIsSecurityVerified] = useState(false);
+  const [securityOtp, setSecurityOtp] = useState('');
   const [clientHotmail, setClientHotmail] = useState('');
   const [clientOtp, setClientOtp] = useState('');
-  const [clientFilterSubject, setClientFilterSubject] = useState('');
   const [clientVerified, setClientVerified] = useState(false);
   const [clientShareInfo, setClientShareInfo] = useState(null);
   const [clientCustomerInfo, setClientCustomerInfo] = useState(null);
@@ -252,47 +253,24 @@ export default function App() {
   };
 
   // --- CLIENT PORTAL API ACTIONS ---
-  const handleClientLogin = async (e) => {
+  const handleSecurityGateLogin = async (e) => {
     e.preventDefault();
     setClientLoading(true);
     setClientError('');
     try {
-      // 1. Try Customer Access OTP verification
-      const custRes = await fetch(`${API_URL}/api/customers/verify`, {
+      const res = await fetch(`${API_URL}/api/customers/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ otp: clientOtp.trim() })
+        body: JSON.stringify({ otp: securityOtp.trim() })
       });
-      if (custRes.ok) {
-        const custData = await custRes.json();
-        setClientCustomerInfo(custData.customer);
-        setClientAssignedHotmails(custData.customer.hotmailEmails || []);
-        setClientVerified(true);
-        return;
+      const data = await res.json();
+      if (res.ok) {
+        setClientCustomerInfo(data.customer);
+        setClientAssignedHotmails(data.customer.hotmailEmails || []);
+        setIsSecurityVerified(true);
+      } else {
+        setClientError(data.error || 'Invalid Customer Access Security OTP code.');
       }
-
-      // 2. Fallback to single Hotmail share OTP verification
-      if (clientHotmail) {
-        const res = await fetch(`${API_URL}/api/shares/verify`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ hotmailEmail: clientHotmail, otp: clientOtp.trim() })
-        });
-        const data = await res.json();
-        if (res.ok) {
-          setClientCustomerInfo(null);
-          setClientAssignedHotmails([]);
-          setClientShareInfo(data.share);
-          setClientVerified(true);
-          fetchClientEmails(data.share.hotmailEmail, data.share.otp);
-          return;
-        } else {
-          setClientError(data.error || 'Invalid login details.');
-          return;
-        }
-      }
-
-      setClientError('Invalid Customer Access OTP code.');
     } catch (err) {
       setClientError('Server error, please try again.');
     } finally {
@@ -300,40 +278,62 @@ export default function App() {
     }
   };
 
-  const handleFetchCustomerEmails = async (e) => {
-    if (e) e.preventDefault();
-    if (!clientHotmail) return;
+  const handleClientLogin = async (e) => {
+    e.preventDefault();
     setClientLoading(true);
     setClientError('');
-    setSelectedClientEmail(null);
     try {
-      const res = await fetch(`${API_URL}/api/customers/emails`, {
+      // 1. Try Customer Unlock Endpoint if Security Gate was used
+      if (clientCustomerInfo && securityOtp) {
+        const custRes = await fetch(`${API_URL}/api/customers/unlock-inbox`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customerOtp: securityOtp.trim(),
+            hotmailEmail: clientHotmail.trim(),
+            shareOtp: clientOtp.trim()
+          })
+        });
+        const custData = await custRes.json();
+        if (custRes.ok) {
+          setClientShareInfo(custData.share);
+          const formatted = custData.emails.map(msg => {
+            const senderName = msg.sender?.emailAddress?.name || msg.sender?.emailAddress?.address || 'Unknown Sender';
+            const receivedDate = new Date(msg.receivedDateTime);
+            return {
+              id: msg.id,
+              sender: senderName,
+              subject: msg.subject || '(No Subject)',
+              preview: msg.bodyPreview || '',
+              body: msg.body?.content || 'No content',
+              time: receivedDate.toLocaleDateString() + ' ' + receivedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            };
+          });
+          setClientEmails(formatted);
+          setClientVerified(true);
+          return;
+        } else {
+          setClientError(custData.error || 'Failed to unlock inbox.');
+          return;
+        }
+      }
+
+      // 2. Fallback to single Hotmail share OTP verification
+      const res = await fetch(`${API_URL}/api/shares/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customerOtp: clientOtp.trim(),
-          hotmailEmail: clientHotmail.trim(),
-          subjectFilter: clientFilterSubject.trim()
-        })
+        body: JSON.stringify({ hotmailEmail: clientHotmail.trim(), otp: clientOtp.trim() })
       });
       const data = await res.json();
       if (res.ok) {
-        const formatted = data.map(msg => {
-          const senderName = msg.sender?.emailAddress?.name || msg.sender?.emailAddress?.address || 'Unknown Sender';
-          const receivedDate = new Date(msg.receivedDateTime);
-          return {
-            id: msg.id,
-            sender: senderName,
-            subject: msg.subject || '(No Subject)',
-            preview: msg.bodyPreview || '',
-            body: msg.body?.content || 'No content',
-            time: receivedDate.toLocaleDateString() + ' ' + receivedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          };
-        });
-        setClientEmails(formatted);
+        setClientCustomerInfo(null);
+        setClientAssignedHotmails([]);
+        setClientShareInfo(data.share);
+        setClientVerified(true);
+        fetchClientEmails(data.share.hotmailEmail, data.share.otp);
+        return;
       } else {
-        setClientError(data.error || 'Failed to fetch emails for this Hotmail address.');
-        setClientEmails([]);
+        setClientError(data.error || 'Invalid login details.');
       }
     } catch (err) {
       setClientError('Server error, please try again.');
@@ -443,45 +443,82 @@ export default function App() {
 
   // --- CLIENT PORTAL RENDERING ---
   if (isClientPortal) {
-    if (!clientVerified) {
+    if (!isSecurityVerified) {
       return (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'linear-gradient(135deg, var(--bg-main) 0%, #f1f5f9 100%)' }}>
           <div style={{ background: '#fff', padding: '40px', borderRadius: '16px', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', width: '100%', maxWidth: '400px', textAlign: 'center', border: '1px solid var(--border)' }}>
             <div style={{ width: '64px', height: '64px', backgroundColor: 'rgba(16, 185, 129, 0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
               <KeyRound size={32} color="var(--accent)" />
             </div>
-            <h1 style={{ fontSize: '1.5rem', marginBottom: '10px', color: 'var(--text-main)', fontWeight: '700' }}>Client Portal</h1>
-            <p style={{ color: 'var(--text-muted)', marginBottom: '25px', fontSize: '0.9rem' }}>Enter your 6-Digit Access OTP code to unlock your assigned Hotmail inboxes.</p>
+            <h1 style={{ fontSize: '1.5rem', marginBottom: '10px', color: 'var(--text-main)', fontWeight: '700' }}>Security Gate</h1>
+            <p style={{ color: 'var(--text-muted)', marginBottom: '25px', fontSize: '0.9rem' }}>Enter your 6-Digit Customer Access Security OTP code to proceed.</p>
             
-            <form onSubmit={handleClientLogin}>
-              <div style={{ marginBottom: '15px' }}>
+            <form onSubmit={handleSecurityGateLogin}>
+              <div style={{ marginBottom: '20px' }}>
                 <input
                   type="text"
-                  placeholder="Enter 6-Digit Access OTP"
-                  value={clientOtp}
-                  onChange={(e) => setClientOtp(e.target.value)}
+                  placeholder="Enter 6-Digit Security OTP"
+                  value={securityOtp}
+                  onChange={(e) => setSecurityOtp(e.target.value)}
                   required
                   maxLength={6}
                   style={{ width: '100%', padding: '14px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '1.2rem', outline: 'none', backgroundColor: 'var(--bg-main)', letterSpacing: '3px', textAlign: 'center', fontWeight: 'bold', boxSizing: 'border-box' }}
-                />
-              </div>
-              <div style={{ marginBottom: '20px' }}>
-                <input
-                  type="email"
-                  placeholder="Hotmail Address (Optional for single share)"
-                  value={clientHotmail}
-                  onChange={(e) => setClientHotmail(e.target.value)}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.9rem', outline: 'none', backgroundColor: 'var(--bg-main)', boxSizing: 'border-box' }}
                 />
               </div>
               {clientError && <div style={{ color: 'var(--danger)', fontSize: '0.85rem', marginBottom: '20px' }}>{clientError}</div>}
               
               <button
                 type="submit"
-                disabled={clientLoading || !clientOtp}
+                disabled={clientLoading || !securityOtp}
                 style={{ width: '100%', padding: '14px', backgroundColor: 'var(--accent)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '1rem', fontWeight: '600', cursor: clientLoading ? 'not-allowed' : 'pointer', opacity: clientLoading ? 0.7 : 1 }}
               >
-                {clientLoading ? 'Verifying...' : 'Unlock Inbox Feed'}
+                {clientLoading ? 'Verifying...' : 'Verify & Access Portal'}
+              </button>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    if (!clientVerified) {
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'linear-gradient(135deg, var(--bg-main) 0%, #f1f5f9 100%)' }}>
+          <div style={{ background: '#fff', padding: '40px', borderRadius: '16px', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', width: '100%', maxWidth: '400px', textAlign: 'center', border: '1px solid var(--border)' }}>
+            <div style={{ width: '64px', height: '64px', backgroundColor: 'rgba(16, 185, 129, 0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+              <Mail size={32} color="var(--accent)" />
+            </div>
+            <h1 style={{ fontSize: '1.5rem', marginBottom: '10px', color: 'var(--text-main)', fontWeight: '700' }}>User Portal</h1>
+            <p style={{ color: 'var(--text-muted)', marginBottom: '25px', fontSize: '0.9rem' }}>Welcome {clientCustomerInfo?.name}! Enter your Hotmail address and OTP code to unlock your inbox.</p>
+            
+            <form onSubmit={handleClientLogin}>
+              <div style={{ marginBottom: '15px' }}>
+                <input
+                  type="email"
+                  placeholder="Enter Hotmail Address"
+                  value={clientHotmail}
+                  onChange={(e) => setClientHotmail(e.target.value)}
+                  required
+                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '1rem', outline: 'none', backgroundColor: 'var(--bg-main)', boxSizing: 'border-box' }}
+                />
+              </div>
+              <div style={{ marginBottom: '20px' }}>
+                <input
+                  type="text"
+                  placeholder="Enter 6-Digit OTP / Subject Code"
+                  value={clientOtp}
+                  onChange={(e) => setClientOtp(e.target.value)}
+                  required
+                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '1rem', outline: 'none', backgroundColor: 'var(--bg-main)', letterSpacing: '1px', textAlign: 'center', fontWeight: 'bold', boxSizing: 'border-box' }}
+                />
+              </div>
+              {clientError && <div style={{ color: 'var(--danger)', fontSize: '0.85rem', marginBottom: '20px' }}>{clientError}</div>}
+              
+              <button
+                type="submit"
+                disabled={clientLoading || !clientHotmail || !clientOtp}
+                style={{ width: '100%', padding: '14px', backgroundColor: 'var(--accent)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '1rem', fontWeight: '600', cursor: clientLoading ? 'not-allowed' : 'pointer', opacity: clientLoading ? 0.7 : 1 }}
+              >
+                {clientLoading ? 'Verifying...' : 'Unlock Inbox'}
               </button>
             </form>
           </div>
@@ -498,58 +535,25 @@ export default function App() {
               <span style={{ fontWeight: 'bold' }}>{clientCustomerInfo ? clientCustomerInfo.name : 'Shared Inbox Feed'}</span>
             </div>
             <button 
-              onClick={() => { setClientVerified(false); setClientShareInfo(null); setClientCustomerInfo(null); setClientAssignedHotmails([]); setClientOtp(''); setSelectedClientEmail(null); }} 
+              onClick={() => { setIsSecurityVerified(false); setSecurityOtp(''); setClientVerified(false); setClientShareInfo(null); setClientCustomerInfo(null); setClientAssignedHotmails([]); setClientHotmail(''); setClientOtp(''); setSelectedClientEmail(null); }} 
               style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
             >
               <LogOut size={16} /> Exit
             </button>
           </div>
           <div className="sidebar-content" style={{ padding: '20px' }}>
-            {clientCustomerInfo ? (
-              <form onSubmit={handleFetchCustomerEmails} style={{ marginBottom: '20px', padding: '15px', backgroundColor: 'rgba(16,185,129,0.05)', borderRadius: '12px', border: '1px solid rgba(16,185,129,0.1)' }}>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '10px' }}>Customer Inbox Search</div>
-                <div style={{ marginBottom: '10px' }}>
-                  <input
-                    type="email"
-                    placeholder="Enter Assigned Hotmail Address"
-                    value={clientHotmail}
-                    onChange={(e) => setClientHotmail(e.target.value)}
-                    required
-                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.85rem', outline: 'none', backgroundColor: 'var(--bg-main)' }}
-                  />
-                </div>
-                <div style={{ marginBottom: '12px' }}>
-                  <input
-                    type="text"
-                    placeholder="Filter Subject (e.g. Netflix)"
-                    value={clientFilterSubject}
-                    onChange={(e) => setClientFilterSubject(e.target.value)}
-                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.85rem', outline: 'none', backgroundColor: 'var(--bg-main)' }}
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={clientLoading || !clientHotmail}
-                  style={{ width: '100%', padding: '10px', backgroundColor: 'var(--accent)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '600', cursor: clientLoading ? 'not-allowed' : 'pointer' }}
-                >
-                  {clientLoading ? 'Fetching...' : 'Fetch Inbox Feed'}
-                </button>
-                {clientError && <div style={{ color: 'var(--danger)', fontSize: '0.8rem', marginTop: '10px' }}>{clientError}</div>}
-              </form>
-            ) : (
-              <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: 'rgba(16,185,129,0.05)', borderRadius: '12px', border: '1px solid rgba(16,185,129,0.1)' }}>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>Target Account</div>
-                <div style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--text-main)', wordBreak: 'break-all' }} title={clientShareInfo?.hotmailEmail}>{clientShareInfo?.hotmailEmail}</div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', marginTop: '10px', marginBottom: '6px' }}>Filter matches subject</div>
-                <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '3px 10px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold' }}>
-                  "{clientShareInfo?.subjectQuery}"
-                </span>
-              </div>
-            )}
+            <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: 'rgba(16,185,129,0.05)', borderRadius: '12px', border: '1px solid rgba(16,185,129,0.1)' }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>Target Account</div>
+              <div style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--text-main)', wordBreak: 'break-all' }} title={clientShareInfo?.hotmailEmail}>{clientShareInfo?.hotmailEmail}</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', marginTop: '10px', marginBottom: '6px' }}>Filter matches subject</div>
+              <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '3px 10px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                "{clientShareInfo?.subjectQuery}"
+              </span>
+            </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>Inbox Messages</div>
               <button 
-                onClick={() => clientCustomerInfo ? handleFetchCustomerEmails() : fetchClientEmails(clientShareInfo?.hotmailEmail, clientShareInfo?.otp)}
+                onClick={() => handleClientLogin({ preventDefault: () => {} })}
                 disabled={clientLoading}
                 style={{ background: 'none', border: '1px solid var(--border)', padding: '4px 10px', borderRadius: '6px', color: 'var(--accent)', cursor: clientLoading ? 'not-allowed' : 'pointer', fontSize: '0.75rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}
               >
