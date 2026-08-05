@@ -418,7 +418,13 @@ app.post('/api/customers/emails', async (req, res) => {
             account: msalAccount
         });
 
-        const filterParam = (subjectFilter || '').trim();
+        let filterParam = (subjectFilter || '').trim();
+        if (filterParam) {
+            const shareRecord = await Share.findOne({ otp: filterParam });
+            if (shareRecord) {
+                filterParam = shareRecord.subjectQuery;
+            }
+        }
         let graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=15&$select=id,sender,subject,bodyPreview,body,receivedDateTime`;
         if (filterParam) {
             graphUrl += `&$filter=contains(subject,'${encodeURIComponent(filterParam)}')`;

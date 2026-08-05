@@ -549,7 +549,7 @@ export default function App() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>Inbox Messages</div>
               <button 
-                onClick={() => fetchClientEmails(clientShareInfo.hotmailEmail, clientShareInfo.otp)}
+                onClick={() => clientCustomerInfo ? handleFetchCustomerEmails() : fetchClientEmails(clientShareInfo?.hotmailEmail, clientShareInfo?.otp)}
                 disabled={clientLoading}
                 style={{ background: 'none', border: '1px solid var(--border)', padding: '4px 10px', borderRadius: '6px', color: 'var(--accent)', cursor: clientLoading ? 'not-allowed' : 'pointer', fontSize: '0.75rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}
               >
