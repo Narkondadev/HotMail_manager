@@ -6,6 +6,7 @@ const cors = require('cors');
 const { cca } = require('./auth');
 const Account = require('./models/Account');
 const Share = require('./models/Share');
+const Customer = require('./models/Customer');
 const app = express();
 const PORT = process.env.PORT || 5001;
 app.use(cors());
@@ -317,7 +318,70 @@ app.post('/api/forward/search', authenticateAdmin, async (req, res) => {
 // --- Auto-Forwarding Stub Endpoints (Disabled to prevent RAM overload) ---
 app.get('/api/autoforward/rules', authenticateAdmin, (req, res) => res.json([]));
 app.post('/api/autoforward/rules', authenticateAdmin, (req, res) => res.status(400).json({ error: 'Auto-forwarding feature disabled to prevent high RAM usage.' }));
-app.delete('/api/autoforward/rules/:id', authenticateAdmin, (req, res) => res.json({ message: 'Rule deleted' }));
+
+// --- CUSTOMER ENDPOINTS ---
+app.get('/api/customers', authenticateAdmin, async (req, res) => {
+    try {
+        const customers = await Customer.find().sort({ createdAt: -1 });
+        res.json(customers);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/customers', authenticateAdmin, async (req, res) => {
+    const { name, otp, hotmailEmails, subjectQuery } = req.body;
+    if (!name || !otp || !hotmailEmails || !Array.isArray(hotmailEmails) || hotmailEmails.length === 0) {
+        return res.status(400).json({ error: 'Customer name, 6-digit OTP, and at least one assigned Hotmail are required.' });
+    }
+    try {
+        const newCustomer = new Customer({
+            name: name.trim(),
+            otp: otp.trim(),
+            hotmailEmails: hotmailEmails.map(e => e.trim().toLowerCase()),
+            subjectQuery: (subjectQuery || '').trim()
+        });
+        await newCustomer.save();
+        res.json(newCustomer);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete('/api/customers/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const customer = await Customer.findByIdAndDelete(req.params.id);
+        if (!customer) return res.status(404).json({ error: 'Customer not found' });
+        res.json({ message: 'Customer deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/customers/verify', async (req, res) => {
+    const { otp } = req.body;
+    if (!otp) {
+        return res.status(400).json({ error: 'OTP code required' });
+    }
+    try {
+        const customer = await Customer.findOne({ otp: otp.trim() });
+        if (!customer) {
+            return res.status(401).json({ error: 'Invalid Customer Access OTP' });
+        }
+        res.json({
+            success: true,
+            customer: {
+                _id: customer._id,
+                name: customer.name,
+                otp: customer.otp,
+                hotmailEmails: customer.hotmailEmails,
+                subjectQuery: customer.subjectQuery
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // --- SHARE ENDPOINTS ---
 app.get('/api/shares', authenticateAdmin, async (req, res) => {

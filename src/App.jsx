@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Mail, Search, Plus, Trash2, User, LogOut, ArrowLeft, Send, AlertCircle, CheckCircle2, Clock, Lock, KeyRound, RefreshCw, ShieldAlert } from 'lucide-react';
+import { Mail, Search, Plus, Trash2, User, LogOut, ArrowLeft, Send, AlertCircle, CheckCircle2, Clock, Lock, KeyRound, RefreshCw, ShieldAlert, Users } from 'lucide-react';
 import './index.css';
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(localStorage.getItem('isLoggedIn') === 'true');
@@ -28,11 +28,22 @@ export default function App() {
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
 
+  // --- CUSTOMER MANAGEMENT STATE VARIABLES ---
+  const [showCustomerPanel, setShowCustomerPanel] = useState(false);
+  const [customerName, setCustomerName] = useState('');
+  const [customerOtp, setCustomerOtp] = useState('');
+  const [customerHotmails, setCustomerHotmails] = useState([]);
+  const [customerSubjectQuery, setCustomerSubjectQuery] = useState('');
+  const [customers, setCustomers] = useState([]);
+  const [isAddingCustomer, setIsAddingCustomer] = useState(false);
+
   // Client Portal specific state
   const [clientHotmail, setClientHotmail] = useState('');
   const [clientOtp, setClientOtp] = useState('');
   const [clientVerified, setClientVerified] = useState(false);
   const [clientShareInfo, setClientShareInfo] = useState(null);
+  const [clientCustomerInfo, setClientCustomerInfo] = useState(null);
+  const [clientAssignedHotmails, setClientAssignedHotmails] = useState([]);
   const [clientEmails, setClientEmails] = useState([]);
   const [clientLoading, setClientLoading] = useState(false);
   const [clientError, setClientError] = useState('');
@@ -113,6 +124,8 @@ export default function App() {
   const handleSelectAccount = (account) => {
     setSelectedAccount(account.email);
     setSelectedEmail(null);
+    setShowSharePanel(false);
+    setShowCustomerPanel(false);
     if (!emails[account.email]) {
       fetchEmailsForAccount(account.email);
     }
@@ -176,25 +189,121 @@ export default function App() {
     }
   };
 
+  // --- CUSTOMER API ACTIONS ---
+  const fetchCustomers = async () => {
+    try {
+      const res = await adminFetch(`${API_URL}/api/customers`);
+      if (res.ok) {
+        const data = await res.json();
+        setCustomers(data);
+      }
+    } catch (err) {
+      console.error("Failed to load customers", err);
+    }
+  };
+
+  useEffect(() => {
+    if (!isLoggedIn || isClientPortal) return;
+    fetchShares();
+    fetchCustomers();
+  }, [isLoggedIn]);
+
+  const handleAddCustomer = async (e) => {
+    e.preventDefault();
+    if (!customerName || !customerOtp || customerHotmails.length === 0) return;
+    setIsAddingCustomer(true);
+    try {
+      const response = await adminFetch(`${API_URL}/api/customers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          name: customerName,
+          otp: customerOtp.trim(),
+          hotmailEmails: customerHotmails,
+          subjectQuery: customerSubjectQuery
+        })
+      });
+      if (response.ok) {
+        setCustomerName('');
+        setCustomerOtp('');
+        setCustomerHotmails([]);
+        setCustomerSubjectQuery('');
+        fetchCustomers();
+      }
+    } catch (err) {
+      console.error("Add customer error:", err);
+    } finally {
+      setIsAddingCustomer(false);
+    }
+  };
+
+  const handleDeleteCustomer = async (id) => {
+    try {
+      await adminFetch(`${API_URL}/api/customers/${id}`, { method: 'DELETE' });
+      fetchCustomers();
+    } catch (err) {
+      console.error("Delete customer error:", err);
+    }
+  };
+
+  const toggleCustomerHotmailSelection = (email) => {
+    setCustomerHotmails(prev => 
+      prev.includes(email) ? prev.filter(e => e !== email) : [...prev, email]
+    );
+  };
+
   // --- CLIENT PORTAL API ACTIONS ---
   const handleClientLogin = async (e) => {
     e.preventDefault();
     setClientLoading(true);
     setClientError('');
     try {
-      const res = await fetch(`${API_URL}/api/shares/verify`, {
+      // 1. Try Customer Access OTP verification
+      const custRes = await fetch(`${API_URL}/api/customers/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hotmailEmail: clientHotmail, otp: clientOtp })
+        body: JSON.stringify({ otp: clientOtp.trim() })
       });
-      const data = await res.json();
-      if (res.ok) {
-        setClientShareInfo(data.share);
+      if (custRes.ok) {
+        const custData = await custRes.json();
+        const customer = custData.customer;
+        setClientCustomerInfo(customer);
+        setClientAssignedHotmails(customer.hotmailEmails || []);
+        const firstEmail = customer.hotmailEmails[0];
+        setClientShareInfo({
+          hotmailEmail: firstEmail,
+          otp: customer.otp,
+          subjectQuery: customer.subjectQuery || 'All Messages'
+        });
         setClientVerified(true);
-        fetchClientEmails(data.share.hotmailEmail, data.share.otp);
-      } else {
-        setClientError(data.error || 'Invalid login details.');
+        if (firstEmail) {
+          fetchClientEmails(firstEmail, customer.otp);
+        }
+        return;
       }
+
+      // 2. Fallback to single Hotmail share OTP verification
+      if (clientHotmail) {
+        const res = await fetch(`${API_URL}/api/shares/verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ hotmailEmail: clientHotmail, otp: clientOtp.trim() })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setClientCustomerInfo(null);
+          setClientAssignedHotmails([]);
+          setClientShareInfo(data.share);
+          setClientVerified(true);
+          fetchClientEmails(data.share.hotmailEmail, data.share.otp);
+          return;
+        } else {
+          setClientError(data.error || 'Invalid login details.');
+          return;
+        }
+      }
+
+      setClientError('Invalid Customer Access OTP code.');
     } catch (err) {
       setClientError('Server error, please try again.');
     } finally {
@@ -311,38 +420,37 @@ export default function App() {
               <KeyRound size={32} color="var(--accent)" />
             </div>
             <h1 style={{ fontSize: '1.5rem', marginBottom: '10px', color: 'var(--text-main)', fontWeight: '700' }}>Client Portal</h1>
-            <p style={{ color: 'var(--text-muted)', marginBottom: '30px', fontSize: '0.9rem' }}>Enter your Hotmail and OTP code to unlock your inbox.</p>
+            <p style={{ color: 'var(--text-muted)', marginBottom: '25px', fontSize: '0.9rem' }}>Enter your 6-Digit Access OTP code to unlock your assigned Hotmail inboxes.</p>
             
             <form onSubmit={handleClientLogin}>
               <div style={{ marginBottom: '15px' }}>
                 <input
-                  type="email"
-                  placeholder="Enter Hotmail Address"
-                  value={clientHotmail}
-                  onChange={(e) => setClientHotmail(e.target.value)}
-                  required
-                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '1rem', outline: 'none', backgroundColor: 'var(--bg-main)', boxSizing: 'border-box' }}
-                />
-              </div>
-              <div style={{ marginBottom: '20px' }}>
-                <input
                   type="text"
-                  placeholder="Enter 6-Digit OTP"
+                  placeholder="Enter 6-Digit Access OTP"
                   value={clientOtp}
                   onChange={(e) => setClientOtp(e.target.value)}
                   required
                   maxLength={6}
-                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '1rem', outline: 'none', backgroundColor: 'var(--bg-main)', letterSpacing: '2px', textAlign: 'center', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '14px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '1.2rem', outline: 'none', backgroundColor: 'var(--bg-main)', letterSpacing: '3px', textAlign: 'center', fontWeight: 'bold', boxSizing: 'border-box' }}
+                />
+              </div>
+              <div style={{ marginBottom: '20px' }}>
+                <input
+                  type="email"
+                  placeholder="Hotmail Address (Optional for single share)"
+                  value={clientHotmail}
+                  onChange={(e) => setClientHotmail(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.9rem', outline: 'none', backgroundColor: 'var(--bg-main)', boxSizing: 'border-box' }}
                 />
               </div>
               {clientError && <div style={{ color: 'var(--danger)', fontSize: '0.85rem', marginBottom: '20px' }}>{clientError}</div>}
               
               <button
                 type="submit"
-                disabled={clientLoading || !clientHotmail || !clientOtp}
+                disabled={clientLoading || !clientOtp}
                 style={{ width: '100%', padding: '14px', backgroundColor: 'var(--accent)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '1rem', fontWeight: '600', cursor: clientLoading ? 'not-allowed' : 'pointer', opacity: clientLoading ? 0.7 : 1 }}
               >
-                {clientLoading ? 'Verifying...' : 'Unlock Inbox'}
+                {clientLoading ? 'Verifying...' : 'Unlock Inbox Feed'}
               </button>
             </form>
           </div>
@@ -356,10 +464,10 @@ export default function App() {
           <div className="sidebar-header" style={{ justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Mail size={24} color="var(--accent)" />
-              <span style={{ fontWeight: 'bold' }}>Shared Inbox Feed</span>
+              <span style={{ fontWeight: 'bold' }}>{clientCustomerInfo ? clientCustomerInfo.name : 'Shared Inbox Feed'}</span>
             </div>
             <button 
-              onClick={() => { setClientVerified(false); setClientShareInfo(null); setClientOtp(''); setSelectedClientEmail(null); }} 
+              onClick={() => { setClientVerified(false); setClientShareInfo(null); setClientCustomerInfo(null); setClientAssignedHotmails([]); setClientOtp(''); setSelectedClientEmail(null); }} 
               style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
             >
               <LogOut size={16} /> Exit
@@ -367,9 +475,31 @@ export default function App() {
           </div>
           <div className="sidebar-content" style={{ padding: '20px' }}>
             <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: 'rgba(16,185,129,0.05)', borderRadius: '12px', border: '1px solid rgba(16,185,129,0.1)' }}>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>Target Account</div>
-              <div style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--text-main)', wordBreak: 'break-all' }} title={clientShareInfo?.hotmailEmail}>{clientShareInfo?.hotmailEmail}</div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', marginTop: '12px', marginBottom: '6px' }}>Filter matches subject</div>
+              {clientAssignedHotmails.length > 1 ? (
+                <div style={{ marginBottom: '12px' }}>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>Select Hotmail Account</div>
+                  <select
+                    value={clientShareInfo?.hotmailEmail}
+                    onChange={(e) => {
+                      const selected = e.target.value;
+                      setClientShareInfo(prev => ({ ...prev, hotmailEmail: selected }));
+                      setSelectedClientEmail(null);
+                      fetchClientEmails(selected, clientOtp);
+                    }}
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--bg-main)', color: 'var(--text-main)', fontSize: '0.9rem', fontWeight: '600' }}
+                  >
+                    {clientAssignedHotmails.map(email => (
+                      <option key={email} value={email}>{email}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>Target Account</div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--text-main)', wordBreak: 'break-all' }} title={clientShareInfo?.hotmailEmail}>{clientShareInfo?.hotmailEmail}</div>
+                </>
+              )}
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', marginTop: '10px', marginBottom: '6px' }}>Filter matches subject</div>
               <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '3px 10px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold' }}>
                 "{clientShareInfo?.subjectQuery}"
               </span>
@@ -643,7 +773,11 @@ export default function App() {
           ))}
         </div>
         <div className="sidebar-footer">
-          <button className="add-btn" onClick={() => { setShowSharePanel(true); setSelectedAccount(null); setSelectedEmail(null); }} style={{ marginBottom: '10px', backgroundColor: 'var(--accent)', color: 'white' }}>
+          <button className="add-btn" onClick={() => { setShowCustomerPanel(true); setShowSharePanel(false); setSelectedAccount(null); setSelectedEmail(null); }} style={{ marginBottom: '8px', backgroundColor: '#38bdf8', color: 'white' }}>
+            <Users size={18} />
+            Manage Customers
+          </button>
+          <button className="add-btn" onClick={() => { setShowSharePanel(true); setShowCustomerPanel(false); setSelectedAccount(null); setSelectedEmail(null); }} style={{ marginBottom: '8px', backgroundColor: 'var(--accent)', color: 'white' }}>
             <KeyRound size={18} />
             Share to Client
           </button>
@@ -654,7 +788,125 @@ export default function App() {
         </div>
       </div>
       <div className="email-list-pane">
-        {showSharePanel ? (
+        {showCustomerPanel ? (
+          <>
+            <div className="list-header">
+              <h2 style={{ margin: 0 }}>Customer Access Management</h2>
+            </div>
+            <div style={{ padding: '25px', overflowY: 'auto' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <form onSubmit={handleAddCustomer} style={{ backgroundColor: 'var(--bg-dark)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                  <h3 style={{ marginTop: 0, marginBottom: '15px', fontSize: '1rem', color: '#38bdf8' }}>Create New Customer Access</h3>
+                  <div style={{ marginBottom: '15px' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Customer Name (Required)</label>
+                    <input
+                      type="text"
+                      className="search-box"
+                      placeholder="e.g. John Doe / Client A"
+                      style={{ width: '100%', padding: '10px' }}
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div style={{ marginBottom: '15px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <label style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>6-Digit Access OTP Code (Required)</label>
+                      <button
+                        type="button"
+                        onClick={() => setCustomerOtp(Math.floor(100000 + Math.random() * 900000).toString())}
+                        style={{ background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
+                      >
+                        ⚡ Auto-Generate OTP
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      className="search-box"
+                      placeholder="e.g. 654321"
+                      style={{ width: '100%', padding: '10px', letterSpacing: '2px', textAlign: 'center', fontWeight: 'bold' }}
+                      maxLength={6}
+                      value={customerOtp}
+                      onChange={(e) => setCustomerOtp(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div style={{ marginBottom: '15px' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Subject Filter (Optional)</label>
+                    <input
+                      type="text"
+                      className="search-box"
+                      placeholder="e.g. Netflix (leave blank for all messages)"
+                      style={{ width: '100%', padding: '10px' }}
+                      value={customerSubjectQuery}
+                      onChange={(e) => setCustomerSubjectQuery(e.target.value)}
+                    />
+                  </div>
+                  <div style={{ marginBottom: '20px' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                      Select Assigned Hotmail Accounts ({customerHotmails.length} selected):
+                    </label>
+                    <div style={{ maxHeight: '160px', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px', backgroundColor: 'var(--bg-main)' }}>
+                      {accounts.length === 0 ? (
+                        <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>No Hotmail accounts available. Add accounts first.</div>
+                      ) : (
+                        accounts.map(acc => (
+                          <label key={acc.email} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-main)', borderBottom: '1px dashed var(--border)' }}>
+                            <input
+                              type="checkbox"
+                              checked={customerHotmails.includes(acc.email)}
+                              onChange={() => toggleCustomerHotmailSelection(acc.email)}
+                            />
+                            <span>{acc.email}</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    className="add-btn"
+                    disabled={isAddingCustomer || !customerName || !customerOtp || customerHotmails.length === 0}
+                    style={{ width: '100%', backgroundColor: '#38bdf8', color: 'white', padding: '12px', borderRadius: '8px', fontWeight: '600' }}
+                  >
+                    {isAddingCustomer ? 'Creating...' : 'Create Customer Access'}
+                  </button>
+                </form>
+
+                <div>
+                  <h3 style={{ marginTop: '10px', fontSize: '1rem', color: 'var(--text-main)' }}>Active Customers ({customers.length})</h3>
+                  {customers.length === 0 ? (
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No customer profiles created yet.</div>
+                  ) : (
+                    customers.map(cust => (
+                      <div key={cust._id} style={{ backgroundColor: 'var(--bg-dark)', padding: '15px', borderRadius: '10px', marginBottom: '12px', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: 'var(--text-main)' }}>{cust.name}</div>
+                          <div style={{ fontSize: '0.8rem', color: '#38bdf8', marginTop: '4px', fontWeight: '600' }}>
+                            Access OTP: <span style={{ letterSpacing: '1px', backgroundColor: 'rgba(56, 189, 248, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>{cust.otp}</span>
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                            Assigned Hotmails:
+                            {cust.hotmailEmails.map(e => (
+                              <span key={e} style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', padding: '1px 6px', borderRadius: '4px', color: 'var(--text-main)' }}>{e}</span>
+                            ))}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteCustomer(cust._id)}
+                          style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '6px' }}
+                          title="Delete customer"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        ) : showSharePanel ? (
           <>
             <div className="list-header">
               <h2 style={{ margin: 0 }}>Share to Client</h2>
