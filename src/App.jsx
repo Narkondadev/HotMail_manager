@@ -33,6 +33,7 @@ export default function App() {
   const [customerName, setCustomerName] = useState('');
   const [customerOtp, setCustomerOtp] = useState('');
   const [customerHotmails, setCustomerHotmails] = useState([]);
+  const [customerAccountSearch, setCustomerAccountSearch] = useState('');
   const [customers, setCustomers] = useState([]);
   const [isAddingCustomer, setIsAddingCustomer] = useState(false);
 
@@ -828,23 +829,54 @@ export default function App() {
                   />
                 </div>
                 <div style={{ marginBottom: '20px' }}>
-                  <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 'bold' }}>
-                    Select Assigned Hotmail Accounts ({customerHotmails.length} selected):
-                  </label>
-                  <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px', backgroundColor: 'var(--bg-main)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <label style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                      Select Assigned Hotmail Accounts ({customerHotmails.length} selected):
+                    </label>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setCustomerHotmails(accounts.map(a => a.email))}
+                        style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
+                      >
+                        Select All
+                      </button>
+                      <span style={{ color: 'var(--border)' }}>|</span>
+                      <button
+                        type="button"
+                        onClick={() => setCustomerHotmails([])}
+                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: '10px' }}>
+                    <input
+                      type="text"
+                      className="search-box"
+                      placeholder="🔍 Search among 116+ Hotmail accounts..."
+                      value={customerAccountSearch}
+                      onChange={(e) => setCustomerAccountSearch(e.target.value)}
+                      style={{ width: '100%', padding: '8px 12px', fontSize: '0.85rem' }}
+                    />
+                  </div>
+                  <div style={{ maxHeight: '380px', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px', backgroundColor: 'var(--bg-main)' }}>
                     {accounts.length === 0 ? (
                       <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>No Hotmail accounts available. Add accounts first.</div>
                     ) : (
-                      accounts.map(acc => (
-                        <label key={acc.email} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-main)', borderBottom: '1px dashed var(--border)' }}>
-                          <input
-                            type="checkbox"
-                            checked={customerHotmails.includes(acc.email)}
-                            onChange={() => toggleCustomerHotmailSelection(acc.email)}
-                          />
-                          <span>{acc.email}</span>
-                        </label>
-                      ))
+                      accounts
+                        .filter(acc => acc.email.toLowerCase().includes(customerAccountSearch.toLowerCase()))
+                        .map(acc => (
+                          <label key={acc.email} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 0', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-main)', borderBottom: '1px dashed var(--border)' }}>
+                            <input
+                              type="checkbox"
+                              checked={customerHotmails.includes(acc.email)}
+                              onChange={() => toggleCustomerHotmailSelection(acc.email)}
+                            />
+                            <span>{acc.email}</span>
+                          </label>
+                        ))
                     )}
                   </div>
                 </div>
