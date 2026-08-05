@@ -773,7 +773,7 @@ export default function App() {
           ))}
         </div>
         <div className="sidebar-footer">
-          <button className="add-btn" onClick={() => { setShowCustomerPanel(true); setShowSharePanel(false); setSelectedAccount(null); setSelectedEmail(null); }} style={{ marginBottom: '8px', backgroundColor: '#38bdf8', color: 'white' }}>
+          <button className="add-btn" onClick={() => { setShowCustomerPanel(true); setShowSharePanel(false); setSelectedAccount(null); setSelectedEmail(null); }} style={{ marginBottom: '8px', backgroundColor: 'var(--accent)', color: 'white' }}>
             <Users size={18} />
             Manage Customers
           </button>
@@ -796,7 +796,7 @@ export default function App() {
             <div style={{ padding: '25px', overflowY: 'auto' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <form onSubmit={handleAddCustomer} style={{ backgroundColor: 'var(--bg-dark)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-                  <h3 style={{ marginTop: 0, marginBottom: '15px', fontSize: '1rem', color: '#38bdf8' }}>Create New Customer Access</h3>
+                  <h3 style={{ marginTop: 0, marginBottom: '15px', fontSize: '1rem', color: 'var(--accent)' }}>Create New Customer Access</h3>
                   <div style={{ marginBottom: '15px' }}>
                     <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Customer Name (Required)</label>
                     <input
@@ -815,7 +815,7 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => setCustomerOtp(Math.floor(100000 + Math.random() * 900000).toString())}
-                        style={{ background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
+                        style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
                       >
                         ⚡ Auto-Generate OTP
                       </button>
@@ -867,7 +867,7 @@ export default function App() {
                     type="submit"
                     className="add-btn"
                     disabled={isAddingCustomer || !customerName || !customerOtp || customerHotmails.length === 0}
-                    style={{ width: '100%', backgroundColor: '#38bdf8', color: 'white', padding: '12px', borderRadius: '8px', fontWeight: '600' }}
+                    style={{ width: '100%', backgroundColor: 'var(--accent)', color: 'white', padding: '12px', borderRadius: '8px', fontWeight: '600' }}
                   >
                     {isAddingCustomer ? 'Creating...' : 'Create Customer Access'}
                   </button>
@@ -882,8 +882,8 @@ export default function App() {
                       <div key={cust._id} style={{ backgroundColor: 'var(--bg-dark)', padding: '15px', borderRadius: '10px', marginBottom: '12px', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
                           <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: 'var(--text-main)' }}>{cust.name}</div>
-                          <div style={{ fontSize: '0.8rem', color: '#38bdf8', marginTop: '4px', fontWeight: '600' }}>
-                            Access OTP: <span style={{ letterSpacing: '1px', backgroundColor: 'rgba(56, 189, 248, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>{cust.otp}</span>
+                          <div style={{ fontSize: '0.8rem', color: '#10b981', marginTop: '4px', fontWeight: '600' }}>
+                            Access OTP: <span style={{ letterSpacing: '1px', backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>{cust.otp}</span>
                           </div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                             Assigned Hotmails:
