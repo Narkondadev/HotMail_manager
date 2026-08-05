@@ -881,23 +881,15 @@ export default function App() {
                     <label style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 'bold' }}>
                       Select Assigned Hotmail Accounts ({customerHotmails.length} selected):
                     </label>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button
-                        type="button"
-                        onClick={() => setCustomerHotmails(accounts.map(a => a.email))}
-                        style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
-                      >
-                        Select All
-                      </button>
-                      <span style={{ color: 'var(--border)' }}>|</span>
+                    {customerHotmails.length > 0 && (
                       <button
                         type="button"
                         onClick={() => setCustomerHotmails([])}
                         style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
                       >
-                        Clear All
+                        Clear Selection
                       </button>
-                    </div>
+                    )}
                   </div>
                   <div style={{ marginBottom: '10px' }}>
                     <input
