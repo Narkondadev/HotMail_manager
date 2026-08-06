@@ -387,6 +387,8 @@ app.post('/api/customers/unlock-inbox', async (req, res) => {
         return res.status(400).json({ error: 'Customer Access OTP, Hotmail Email, and Share OTP code are required.' });
     }
     try {
+        await warmUpCache();
+
         const customer = await Customer.findOne({ otp: customerOtp.trim() });
         if (!customer) {
             return res.status(401).json({ error: 'Invalid Security Access OTP.' });
@@ -396,41 +398,42 @@ app.post('/api/customers/unlock-inbox', async (req, res) => {
             return res.status(403).json({ error: 'Access Denied: This Hotmail address is not assigned to your Customer profile.' });
         }
 
-        let subjectQuery = shareOtp.trim();
-        const shareRecord = await Share.findOne({ otp: subjectQuery });
-        if (shareRecord) {
-            subjectQuery = shareRecord.subjectQuery;
-        }
-
         const accountDoc = await Account.findOne({ email: normalizedEmail });
         if (!accountDoc) {
             return res.status(404).json({ error: 'Hotmail account not found in system.' });
         }
 
-        const tokenCache = cca.getTokenCache();
+        let accessToken = null;
         try {
-            await tokenCache.deserialize(accountDoc.msalCache);
-        } catch (e) {}
-
-        const accounts = await tokenCache.getAllAccounts();
-        const msalAccount = accounts.find(a => a.username.toLowerCase() === normalizedEmail);
-
-        if (!msalAccount) {
-            return res.status(401).json({ error: 'Account session expired. Please contact admin.' });
+            const msalAccount = await getMsalAccount(accountDoc.homeAccountId, accountDoc.email);
+            if (msalAccount) {
+                const tokenResponse = await cca.acquireTokenSilent({
+                    account: msalAccount,
+                    scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
+                });
+                accessToken = tokenResponse.accessToken;
+                await saveMsalCache();
+            }
+        } catch (msalErr) {
+            console.warn(`MSAL silent token failed for ${normalizedEmail}:`, msalErr.message);
         }
 
-        const tokenResponse = await cca.acquireTokenSilent({
-            scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
-            account: msalAccount
-        });
-
-        let graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=15&$select=id,sender,subject,bodyPreview,body,receivedDateTime`;
-        if (subjectQuery) {
-            graphUrl += `&$filter=contains(subject,'${encodeURIComponent(subjectQuery)}')`;
+        if (!accessToken && accountDoc.accessToken && accountDoc.accessToken !== 'managed-by-msal-cache' && accountDoc.accessToken.includes('.')) {
+            accessToken = accountDoc.accessToken;
         }
 
+        if (!accessToken) {
+            if (accountDoc.status !== 'blocked') {
+                accountDoc.status = 'blocked';
+                await accountDoc.save().catch(() => {});
+            }
+            return res.status(401).json({ error: 'Account session expired. Please contact admin to re-authenticate.' });
+        }
+
+        // Fetch top 25 messages from Inbox folder
+        const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=25&$select=id,sender,subject,bodyPreview,body,receivedDateTime&$orderby=receivedDateTime DESC`;
         const fetchResponse = await fetch(graphUrl, {
-            headers: { Authorization: `Bearer ${tokenResponse.accessToken}` }
+            headers: { Authorization: `Bearer ${accessToken}` }
         });
 
         if (!fetchResponse.ok) {
@@ -438,14 +441,42 @@ app.post('/api/customers/unlock-inbox', async (req, res) => {
             return res.status(fetchResponse.status).json({ error: `Microsoft Graph API error: ${errText}` });
         }
 
+        if (accountDoc.status === 'blocked') {
+            accountDoc.status = 'active';
+            await accountDoc.save().catch(() => {});
+        }
+
         const emailData = await fetchResponse.json();
+        const allMessages = emailData.value || [];
+
+        // Determine filter parameter
+        let filterParam = shareOtp.trim();
+        const shareRecord = await Share.findOne({ otp: filterParam });
+        if (shareRecord) {
+            filterParam = shareRecord.subjectQuery;
+        }
+
+        // Filter messages in JS (case-insensitive)
+        let filteredMessages = allMessages;
+        if (filterParam && filterParam.toLowerCase() !== customerOtp.trim().toLowerCase()) {
+            const queryLower = filterParam.toLowerCase();
+            const matching = allMessages.filter(m => 
+                (m.subject && m.subject.toLowerCase().includes(queryLower)) ||
+                (m.bodyPreview && m.bodyPreview.toLowerCase().includes(queryLower))
+            );
+            // If specific subject matches found, use them; otherwise show all inbox messages so feed is never blank
+            if (matching.length > 0) {
+                filteredMessages = matching;
+            }
+        }
+
         res.json({
             share: {
                 hotmailEmail: normalizedEmail,
-                subjectQuery: subjectQuery,
+                subjectQuery: filterParam || 'Inbox Feed',
                 otp: shareOtp.trim()
             },
-            emails: emailData.value || []
+            emails: filteredMessages
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -458,6 +489,8 @@ app.post('/api/customers/emails', async (req, res) => {
         return res.status(400).json({ error: 'Customer Access OTP and Hotmail Email are required.' });
     }
     try {
+        await warmUpCache();
+
         const customer = await Customer.findOne({ otp: customerOtp.trim() });
         if (!customer) {
             return res.status(401).json({ error: 'Invalid Customer Access OTP.' });
@@ -472,37 +505,30 @@ app.post('/api/customers/emails', async (req, res) => {
             return res.status(404).json({ error: 'Hotmail account not found in system.' });
         }
 
-        const tokenCache = cca.getTokenCache();
+        let accessToken = null;
         try {
-            await tokenCache.deserialize(accountDoc.msalCache);
-        } catch (e) {}
+            const msalAccount = await getMsalAccount(accountDoc.homeAccountId, accountDoc.email);
+            if (msalAccount) {
+                const tokenResponse = await cca.acquireTokenSilent({
+                    account: msalAccount,
+                    scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
+                });
+                accessToken = tokenResponse.accessToken;
+                await saveMsalCache();
+            }
+        } catch (err) {}
 
-        const accounts = await tokenCache.getAllAccounts();
-        const msalAccount = accounts.find(a => a.username.toLowerCase() === normalizedEmail);
+        if (!accessToken && accountDoc.accessToken && accountDoc.accessToken !== 'managed-by-msal-cache' && accountDoc.accessToken.includes('.')) {
+            accessToken = accountDoc.accessToken;
+        }
 
-        if (!msalAccount) {
+        if (!accessToken) {
             return res.status(401).json({ error: 'Account session expired. Please contact admin.' });
         }
 
-        const tokenResponse = await cca.acquireTokenSilent({
-            scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
-            account: msalAccount
-        });
-
-        let filterParam = (subjectFilter || '').trim();
-        if (filterParam) {
-            const shareRecord = await Share.findOne({ otp: filterParam });
-            if (shareRecord) {
-                filterParam = shareRecord.subjectQuery;
-            }
-        }
-        let graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=15&$select=id,sender,subject,bodyPreview,body,receivedDateTime`;
-        if (filterParam) {
-            graphUrl += `&$filter=contains(subject,'${encodeURIComponent(filterParam)}')`;
-        }
-
+        const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=25&$select=id,sender,subject,bodyPreview,body,receivedDateTime&$orderby=receivedDateTime DESC`;
         const fetchResponse = await fetch(graphUrl, {
-            headers: { Authorization: `Bearer ${tokenResponse.accessToken}` }
+            headers: { Authorization: `Bearer ${accessToken}` }
         });
 
         if (!fetchResponse.ok) {
@@ -511,7 +537,29 @@ app.post('/api/customers/emails', async (req, res) => {
         }
 
         const emailData = await fetchResponse.json();
-        res.json(emailData.value || []);
+        const allMessages = emailData.value || [];
+
+        let filterParam = (subjectFilter || '').trim();
+        if (filterParam) {
+            const shareRecord = await Share.findOne({ otp: filterParam });
+            if (shareRecord) {
+                filterParam = shareRecord.subjectQuery;
+            }
+        }
+
+        let filteredMessages = allMessages;
+        if (filterParam && filterParam.toLowerCase() !== customerOtp.trim().toLowerCase()) {
+            const queryLower = filterParam.toLowerCase();
+            const matching = allMessages.filter(m => 
+                (m.subject && m.subject.toLowerCase().includes(queryLower)) ||
+                (m.bodyPreview && m.bodyPreview.toLowerCase().includes(queryLower))
+            );
+            if (matching.length > 0) {
+                filteredMessages = matching;
+            }
+        }
+
+        res.json(filteredMessages);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
