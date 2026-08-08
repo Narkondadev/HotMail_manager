@@ -449,31 +449,37 @@ app.post('/api/customers/unlock-inbox', async (req, res) => {
         const emailData = await fetchResponse.json();
         const allMessages = emailData.value || [];
 
-        // Determine filter parameter
-        let filterParam = shareOtp.trim();
-        const shareRecord = await Share.findOne({ otp: filterParam });
-        if (shareRecord) {
-            filterParam = shareRecord.subjectQuery;
+        // Determine filter parameters (support ALL language filters created for this OTP code)
+        let rawQuery = shareOtp.trim();
+        const matchingShares = await Share.find({ otp: rawQuery });
+        let subjectQueries = [];
+        if (matchingShares && matchingShares.length > 0) {
+            subjectQueries = matchingShares.map(s => s.subjectQuery.trim().toLowerCase()).filter(Boolean);
+        } else if (rawQuery && rawQuery.toLowerCase() !== customerOtp.trim().toLowerCase()) {
+            subjectQueries = [rawQuery.toLowerCase()];
         }
 
-        // Filter messages in JS (case-insensitive)
+        // Filter messages in JS (case-insensitive across ALL language filters)
         let filteredMessages = allMessages;
-        if (filterParam && filterParam.toLowerCase() !== customerOtp.trim().toLowerCase()) {
-            const queryLower = filterParam.toLowerCase();
-            const matching = allMessages.filter(m => 
-                (m.subject && m.subject.toLowerCase().includes(queryLower)) ||
-                (m.bodyPreview && m.bodyPreview.toLowerCase().includes(queryLower))
-            );
-            // If specific subject matches found, use them; otherwise show all inbox messages so feed is never blank
+        if (subjectQueries.length > 0) {
+            const matching = allMessages.filter(m => {
+                const subLower = (m.subject || '').toLowerCase();
+                const bodyLower = (m.bodyPreview || '').toLowerCase();
+                return subjectQueries.some(q => subLower.includes(q) || bodyLower.includes(q));
+            });
             if (matching.length > 0) {
                 filteredMessages = matching;
             }
         }
 
+        const displayFilter = matchingShares.length > 0 
+            ? matchingShares.map(s => s.subjectQuery).join(', ') 
+            : (rawQuery || 'Inbox Feed');
+
         res.json({
             share: {
                 hotmailEmail: normalizedEmail,
-                subjectQuery: filterParam || 'Inbox Feed',
+                subjectQuery: displayFilter,
                 otp: shareOtp.trim()
             },
             emails: filteredMessages
@@ -539,21 +545,22 @@ app.post('/api/customers/emails', async (req, res) => {
         const emailData = await fetchResponse.json();
         const allMessages = emailData.value || [];
 
-        let filterParam = (subjectFilter || '').trim();
-        if (filterParam) {
-            const shareRecord = await Share.findOne({ otp: filterParam });
-            if (shareRecord) {
-                filterParam = shareRecord.subjectQuery;
-            }
+        let rawQuery = (subjectFilter || '').trim();
+        const matchingShares = await Share.find({ otp: rawQuery });
+        let subjectQueries = [];
+        if (matchingShares && matchingShares.length > 0) {
+            subjectQueries = matchingShares.map(s => s.subjectQuery.trim().toLowerCase()).filter(Boolean);
+        } else if (rawQuery && rawQuery.toLowerCase() !== customerOtp.trim().toLowerCase()) {
+            subjectQueries = [rawQuery.toLowerCase()];
         }
 
         let filteredMessages = allMessages;
-        if (filterParam && filterParam.toLowerCase() !== customerOtp.trim().toLowerCase()) {
-            const queryLower = filterParam.toLowerCase();
-            const matching = allMessages.filter(m => 
-                (m.subject && m.subject.toLowerCase().includes(queryLower)) ||
-                (m.bodyPreview && m.bodyPreview.toLowerCase().includes(queryLower))
-            );
+        if (subjectQueries.length > 0) {
+            const matching = allMessages.filter(m => {
+                const subLower = (m.subject || '').toLowerCase();
+                const bodyLower = (m.bodyPreview || '').toLowerCase();
+                return subjectQueries.some(q => subLower.includes(q) || bodyLower.includes(q));
+            });
             if (matching.length > 0) {
                 filteredMessages = matching;
             }
