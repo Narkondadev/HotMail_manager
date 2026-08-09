@@ -357,6 +357,28 @@ app.delete('/api/customers/:id', authenticateAdmin, async (req, res) => {
     }
 });
 
+app.put('/api/customers/:id', authenticateAdmin, async (req, res) => {
+    const { name, otp, hotmailEmails } = req.body;
+    if (!name || !otp || !hotmailEmails || !Array.isArray(hotmailEmails) || hotmailEmails.length === 0) {
+        return res.status(400).json({ error: 'Customer name, 6-digit OTP, and at least one assigned Hotmail are required.' });
+    }
+    try {
+        const updatedCustomer = await Customer.findByIdAndUpdate(
+            req.params.id,
+            {
+                name: name.trim(),
+                otp: otp.trim(),
+                hotmailEmails: hotmailEmails.map(e => e.trim().toLowerCase())
+            },
+            { new: true }
+        );
+        if (!updatedCustomer) return res.status(404).json({ error: 'Customer not found' });
+        res.json(updatedCustomer);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.post('/api/customers/verify', async (req, res) => {
     const { otp } = req.body;
     if (!otp) {

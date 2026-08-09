@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Mail, Search, Plus, Trash2, User, LogOut, ArrowLeft, Send, AlertCircle, CheckCircle2, Clock, Lock, KeyRound, RefreshCw, ShieldAlert, Users } from 'lucide-react';
+import { Mail, Search, Plus, Trash2, User, LogOut, ArrowLeft, Send, AlertCircle, CheckCircle2, Clock, Lock, KeyRound, RefreshCw, ShieldAlert, Users, Pencil } from 'lucide-react';
 import './index.css';
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(localStorage.getItem('isLoggedIn') === 'true');
@@ -36,6 +36,7 @@ export default function App() {
   const [customerAccountSearch, setCustomerAccountSearch] = useState('');
   const [customers, setCustomers] = useState([]);
   const [isAddingCustomer, setIsAddingCustomer] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState(null);
 
   // Client Portal specific state
   const [isSecurityVerified, setIsSecurityVerified] = useState(false);
@@ -210,13 +211,34 @@ export default function App() {
     fetchCustomers();
   }, [isLoggedIn]);
 
+  const handleEditCustomer = (cust) => {
+    setEditingCustomer(cust);
+    setCustomerName(cust.name);
+    setCustomerOtp(cust.otp);
+    setCustomerHotmails(cust.hotmailEmails || []);
+    setShowCustomerPanel(true);
+    setShowSharePanel(false);
+  };
+
+  const cancelEditCustomer = () => {
+    setEditingCustomer(null);
+    setCustomerName('');
+    setCustomerOtp('');
+    setCustomerHotmails([]);
+  };
+
   const handleAddCustomer = async (e) => {
     e.preventDefault();
     if (!customerName || !customerOtp || customerHotmails.length === 0) return;
     setIsAddingCustomer(true);
     try {
-      const response = await adminFetch(`${API_URL}/api/customers`, {
-        method: 'POST',
+      const url = editingCustomer 
+        ? `${API_URL}/api/customers/${editingCustomer._id}`
+        : `${API_URL}/api/customers`;
+      const method = editingCustomer ? 'PUT' : 'POST';
+
+      const response = await adminFetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           name: customerName,
@@ -225,13 +247,11 @@ export default function App() {
         })
       });
       if (response.ok) {
-        setCustomerName('');
-        setCustomerOtp('');
-        setCustomerHotmails([]);
+        cancelEditCustomer();
         fetchCustomers();
       }
     } catch (err) {
-      console.error("Add customer error:", err);
+      console.error("Save customer error:", err);
     } finally {
       setIsAddingCustomer(false);
     }
@@ -240,6 +260,9 @@ export default function App() {
   const handleDeleteCustomer = async (id) => {
     try {
       await adminFetch(`${API_URL}/api/customers/${id}`, { method: 'DELETE' });
+      if (editingCustomer && editingCustomer._id === id) {
+        cancelEditCustomer();
+      }
       fetchCustomers();
     } catch (err) {
       console.error("Delete customer error:", err);
@@ -837,11 +860,11 @@ export default function App() {
         {showCustomerPanel ? (
           <>
             <div className="list-header">
-              <h2 style={{ margin: 0 }}>Add Customer Access</h2>
+              <h2 style={{ margin: 0 }}>{editingCustomer ? 'Edit Customer Profile' : 'Add Customer Access'}</h2>
             </div>
             <div style={{ padding: '25px', overflowY: 'auto' }}>
               <form onSubmit={handleAddCustomer} style={{ backgroundColor: 'var(--bg-dark)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-                <h3 style={{ marginTop: 0, marginBottom: '15px', fontSize: '1rem', color: 'var(--accent)' }}>Create New Customer Access</h3>
+                <h3 style={{ marginTop: 0, marginBottom: '15px', fontSize: '1rem', color: 'var(--accent)' }}>{editingCustomer ? 'Edit Customer Access' : 'Create New Customer Access'}</h3>
                 <div style={{ marginBottom: '15px' }}>
                   <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Customer Name (Required)</label>
                   <input
@@ -920,14 +943,25 @@ export default function App() {
                     )}
                   </div>
                 </div>
-                <button
-                  type="submit"
-                  className="add-btn"
-                  disabled={isAddingCustomer || !customerName || !customerOtp || customerHotmails.length === 0}
-                  style={{ width: '100%', backgroundColor: 'var(--accent)', color: 'white', padding: '12px', borderRadius: '8px', fontWeight: '600' }}
-                >
-                  {isAddingCustomer ? 'Creating...' : 'Create Customer Access'}
-                </button>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    type="submit"
+                    className="add-btn"
+                    disabled={isAddingCustomer || !customerName || !customerOtp || customerHotmails.length === 0}
+                    style={{ flex: 1, backgroundColor: 'var(--accent)', color: 'white', padding: '12px', borderRadius: '8px', fontWeight: '600' }}
+                  >
+                    {isAddingCustomer ? (editingCustomer ? 'Updating...' : 'Creating...') : (editingCustomer ? 'Update Customer Access' : 'Create Customer Access')}
+                  </button>
+                  {editingCustomer && (
+                    <button
+                      type="button"
+                      onClick={cancelEditCustomer}
+                      style={{ backgroundColor: 'var(--bg-main)', color: 'var(--text-muted)', border: '1px solid var(--border)', padding: '12px 16px', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
               </form>
             </div>
           </>
@@ -1086,14 +1120,26 @@ export default function App() {
                             </div>
                           </div>
                         </div>
-                        <button
-                          onClick={() => handleDeleteCustomer(cust._id)}
-                          style={{ padding: '6px 10px', backgroundColor: 'var(--bg-dark)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '500', fontSize: '0.75rem', transition: 'all 0.2s', flexShrink: 0 }}
-                          onMouseOver={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; }}
-                          onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-dark)'; }}
-                        >
-                          <Trash2 size={14} /> Remove Customer
-                        </button>
+                        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                          <button
+                            onClick={() => handleEditCustomer(cust)}
+                            style={{ padding: '6px 10px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--accent)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '500', fontSize: '0.75rem', transition: 'all 0.2s' }}
+                            onMouseOver={(e) => { e.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.2)'; }}
+                            onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.1)'; }}
+                            title="Edit customer details"
+                          >
+                            <Pencil size={14} /> Edit
+                          </button>
+                          <button
+                            onClick={() => handleDeleteCustomer(cust._id)}
+                            style={{ padding: '6px 10px', backgroundColor: 'var(--bg-dark)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '500', fontSize: '0.75rem', transition: 'all 0.2s' }}
+                            onMouseOver={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; }}
+                            onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-dark)'; }}
+                            title="Delete customer profile"
+                          >
+                            <Trash2 size={14} /> Remove
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
