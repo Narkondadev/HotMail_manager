@@ -5,7 +5,7 @@ import './index.css';
 function EmailSkeleton() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '5px' }}>
-      {[1, 2, 3, 4].map(i => (
+      {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
         <div
           key={i}
           style={{
