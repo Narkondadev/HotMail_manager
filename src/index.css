@@ -468,3 +468,25 @@ body {
 .animate-pulse {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/* Skeleton Shimmer Loading */
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: -200px 0;
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.85;
+  }
+  100% {
+    background-position: 200px 0;
+    opacity: 0.4;
+  }
+}
+
+.skeleton-box {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04) 0%, rgba(16, 185, 129, 0.12) 50%, rgba(255, 255, 255, 0.04) 100%);
+  background-size: 400px 100%;
+  animation: skeleton-shimmer 1.5s infinite ease-in-out;
+  border-radius: 6px;
+}

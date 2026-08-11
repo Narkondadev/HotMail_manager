@@ -1,6 +1,35 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Mail, Search, Plus, Trash2, User, LogOut, ArrowLeft, Send, AlertCircle, CheckCircle2, Clock, Lock, KeyRound, RefreshCw, ShieldAlert, Users, Pencil } from 'lucide-react';
 import './index.css';
+
+function EmailSkeleton() {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '5px' }}>
+      {[1, 2, 3, 4].map(i => (
+        <div
+          key={i}
+          style={{
+            padding: '15px',
+            backgroundColor: 'var(--bg-main)',
+            border: '1px solid var(--border)',
+            borderRadius: '10px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px'
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="skeleton-box" style={{ width: '130px', height: '14px' }} />
+            <div className="skeleton-box" style={{ width: '70px', height: '12px' }} />
+          </div>
+          <div className="skeleton-box" style={{ width: '70%', height: '16px' }} />
+          <div className="skeleton-box" style={{ width: '90%', height: '12px' }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(localStorage.getItem('isLoggedIn') === 'true');
   const [loginEmail, setLoginEmail] = useState('');
@@ -584,8 +613,8 @@ export default function App() {
               </button>
             </div>
             <div className="emails-container" style={{ padding: 0 }}>
-              {clientLoading && clientEmails.length === 0 ? (
-                <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>Connecting to server...</div>
+              {clientLoading ? (
+                <EmailSkeleton />
               ) : clientEmails.length > 0 ? (
                 clientEmails.map(email => (
                   <div
@@ -1055,9 +1084,7 @@ export default function App() {
                 </div>
               )}
               {isLoading ? (
-                <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                  Fetching latest emails from Microsoft...
-                </div>
+                <EmailSkeleton />
               ) : filteredEmails.length > 0 ? (
                 filteredEmails.map(email => (
                   <div
