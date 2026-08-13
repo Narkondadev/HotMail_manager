@@ -195,7 +195,7 @@ app.get('/api/auth/callback', async (req, res) => {
                 email: username, 
                 name: name || username, 
                 homeAccountId: homeAccountId,
-                refreshToken: "managed-by-msal-cache", 
+                refreshToken: response.refreshToken || "managed-by-msal-cache", 
                 accessToken: response.accessToken,
                 status: 'active'
             },
@@ -213,12 +213,12 @@ app.get('/api/emails/:email', authenticateAdmin, async (req, res) => {
         const accountDoc = await Account.findOne({ email: req.params.email });
         if (!accountDoc) return res.status(404).json({ error: 'Account not found' });
 
-        // Force-load MSAL cache from MongoDB so Render restarts don't break token lookup
+        // Force-load MSAL cache from MongoDB
         await warmUpCache();
 
         let accessToken = null;
 
-        // Try MSAL silent token first (most up-to-date)
+        // Layer 1: MSAL Silent Token Refresh
         try {
             const msalAccount = await getMsalAccount(accountDoc.homeAccountId, accountDoc.email);
             if (msalAccount) {
@@ -230,34 +230,56 @@ app.get('/api/emails/:email', authenticateAdmin, async (req, res) => {
                 await saveMsalCache();
             }
         } catch (msalErr) {
-            console.warn(`MSAL silent token failed for ${req.params.email}, trying stored token:`, msalErr.message);
+            console.warn(`MSAL silent token failed for ${req.params.email}, trying Layer 2 fallback:`, msalErr.message);
         }
 
-        // Fallback: use the stored accessToken directly if it's a valid JWT token string
+        // Layer 2: Direct Refresh Token Fallback
+        if (!accessToken && accountDoc.refreshToken && accountDoc.refreshToken.length > 30 && accountDoc.refreshToken !== 'managed-by-msal-cache') {
+            try {
+                const tokenResponse = await cca.acquireTokenByRefreshToken({
+                    refreshToken: accountDoc.refreshToken,
+                    scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
+                });
+                accessToken = tokenResponse.accessToken;
+                accountDoc.accessToken = accessToken;
+                await accountDoc.save().catch(() => {});
+                await saveMsalCache();
+                console.log(`Successfully renewed token via Layer 2 Refresh Token for ${req.params.email}`);
+            } catch (refErr) {
+                console.warn(`Layer 2 Refresh Token failed for ${req.params.email}:`, refErr.message);
+            }
+        }
+
+        // Layer 3: Legacy JWT Token String Fallback
         if (!accessToken && accountDoc.accessToken && accountDoc.accessToken !== 'managed-by-msal-cache' && accountDoc.accessToken.includes('.')) {
-            console.log(`Using stored accessToken for ${req.params.email}`);
             accessToken = accountDoc.accessToken;
         }
 
         if (!accessToken) {
-            accountDoc.status = 'blocked';
-            await accountDoc.save().catch(() => {});
-            return res.status(401).json({ error: 'Session expired. Please remove the account and add it again.' });
+            return res.status(401).json({ error: 'Session expired. Please re-authenticate the account via Add New Hotmail.' });
         }
 
-        // Only fetch emails from the Inbox folder, excluding Sent Items and Drafts
-        const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=10&$select=sender,subject,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime DESC`;
+        // Fetch inbox emails
+        const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=10&$select=id,sender,subject,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime DESC`;
         const graphResponse = await fetch(graphUrl, {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
+
         if (!graphResponse.ok) {
             const errText = await graphResponse.text();
-            if (graphResponse.status === 401 || errText.includes('Unauthorized') || errText.includes('invalid_grant')) {
+            if (graphResponse.status === 401 || errText.includes('invalid_grant')) {
                 accountDoc.status = 'blocked';
                 await accountDoc.save().catch(() => {});
             }
             throw new Error(`Microsoft returned an error: ${graphResponse.statusText} - ${errText}`);
         }
+
+        // Auto-heal status to active if call succeeds
+        if (accountDoc.status === 'blocked') {
+            accountDoc.status = 'active';
+            await accountDoc.save().catch(() => {});
+        }
+
         const data = await graphResponse.json();
         res.json(data.value);
     } catch (error) {
