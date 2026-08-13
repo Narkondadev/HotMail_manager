@@ -16,17 +16,23 @@ const cachePlugin = {
     afterCacheAccess: async (cacheContext) => {
         if (cacheContext.cacheHasChanged) {
             try {
+                const allAccounts = await cacheContext.tokenCache.getAllAccounts();
+                if (!allAccounts || allAccounts.length === 0) {
+                    return; // NEVER overwrite MongoDB global_cache with an empty cache!
+                }
                 const serializedCache = cacheContext.tokenCache.serialize();
-                await Account.findOneAndUpdate(
-                    { email: 'global_cache' },
-                    { 
-                        email: 'global_cache', 
-                        name: 'Cache', 
-                        homeAccountId: 'cache', 
-                        refreshToken: serializedCache 
-                    },
-                    { upsert: true }
-                );
+                if (serializedCache && serializedCache.length > 200) {
+                    await Account.findOneAndUpdate(
+                        { email: 'global_cache' },
+                        { 
+                            email: 'global_cache', 
+                            name: 'Cache', 
+                            homeAccountId: 'cache', 
+                            refreshToken: serializedCache 
+                        },
+                        { upsert: true }
+                    );
+                }
             } catch (err) {
                 console.error('Error writing cache to DB', err);
             }

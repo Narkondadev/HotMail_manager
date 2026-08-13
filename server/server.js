@@ -68,8 +68,12 @@ const warmUpCache = async (force = false) => {
 
 const saveMsalCache = async () => {
     try {
+        const allAccounts = await cca.getTokenCache().getAllAccounts();
+        if (!allAccounts || allAccounts.length === 0) {
+            return; // NEVER overwrite MongoDB global_cache with 0 accounts!
+        }
         const serialized = cca.getTokenCache().serialize();
-        if (serialized && serialized.length > 10) {
+        if (serialized && serialized.length > 200) {
             await Account.findOneAndUpdate(
                 { email: 'global_cache' },
                 { 
