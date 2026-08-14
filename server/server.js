@@ -12,10 +12,13 @@ const PORT = process.env.PORT || 5001;
 app.use(cors());
 app.use(express.json());
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => {
+  .then(async () => {
     console.log('Connected to MongoDB');
     Share.collection.dropIndex('otp_1').catch(() => {});
     Share.collection.dropIndex('createdAt_1').catch(() => {});
+    // Warm up MSAL token cache immediately at startup so first request is fast
+    await warmUpCache();
+    console.log('MSAL cache pre-warmed at startup.');
   })
   .catch(err => console.error('MongoDB connection error:', err));
 
@@ -50,6 +53,29 @@ app.post('/api/admin/login', (req, res) => {
         res.status(401).json({ error: 'Invalid email or password' });
     }
 });
+
+// ============================================================
+// IN-MEMORY EMAIL CACHE (60-second TTL per account)
+// Prevents repeated Microsoft Graph API calls for same account
+// ============================================================
+const emailCache = new Map(); // key: email, value: { data, timestamp }
+const EMAIL_CACHE_TTL_MS = 60 * 1000; // 60 seconds
+
+const getEmailCache = (email) => {
+    const cached = emailCache.get(email);
+    if (cached && (Date.now() - cached.timestamp) < EMAIL_CACHE_TTL_MS) {
+        return cached.data;
+    }
+    return null;
+};
+
+const setEmailCache = (email, data) => {
+    emailCache.set(email, { data, timestamp: Date.now() });
+};
+
+const invalidateEmailCache = (email) => {
+    emailCache.delete(email);
+};
 
 // Force MSAL to load its token cache from MongoDB before any token operation
 let isCacheWarmed = false;
@@ -214,11 +240,20 @@ app.get('/api/auth/callback', async (req, res) => {
 });
 app.get('/api/emails/:email', authenticateAdmin, async (req, res) => {
     try {
-        const accountDoc = await Account.findOne({ email: req.params.email });
-        if (!accountDoc) return res.status(404).json({ error: 'Account not found' });
+        const emailKey = req.params.email.toLowerCase();
 
-        // Force-load MSAL cache from MongoDB
-        await warmUpCache();
+        // ⚡ SPEED: Serve from 60-second in-memory cache if available
+        const cachedEmails = getEmailCache(emailKey);
+        if (cachedEmails) {
+            return res.json(cachedEmails);
+        }
+
+        // ⚡ SPEED: Run DB lookup and cache warm-up in parallel
+        const [accountDoc] = await Promise.all([
+            Account.findOne({ email: emailKey }),
+            warmUpCache()
+        ]);
+        if (!accountDoc) return res.status(404).json({ error: 'Account not found' });
 
         let accessToken = null;
 
@@ -234,7 +269,7 @@ app.get('/api/emails/:email', authenticateAdmin, async (req, res) => {
                 await saveMsalCache();
             }
         } catch (msalErr) {
-            console.warn(`MSAL silent token failed for ${req.params.email}, trying Layer 2 fallback:`, msalErr.message);
+            console.warn(`MSAL silent token failed for ${emailKey}, trying Layer 2 fallback:`, msalErr.message);
         }
 
         // Layer 2: Direct Refresh Token Fallback
@@ -248,9 +283,8 @@ app.get('/api/emails/:email', authenticateAdmin, async (req, res) => {
                 accountDoc.accessToken = accessToken;
                 await accountDoc.save().catch(() => {});
                 await saveMsalCache();
-                console.log(`Successfully renewed token via Layer 2 Refresh Token for ${req.params.email}`);
             } catch (refErr) {
-                console.warn(`Layer 2 Refresh Token failed for ${req.params.email}:`, refErr.message);
+                console.warn(`Layer 2 Refresh Token failed for ${emailKey}:`, refErr.message);
             }
         }
 
@@ -260,15 +294,10 @@ app.get('/api/emails/:email', authenticateAdmin, async (req, res) => {
         }
 
         if (!accessToken) {
-            // Always persist blocked status to MongoDB — guarantees refresh shows correct state
-            await Account.findOneAndUpdate(
-                { email: req.params.email },
-                { status: 'blocked' }
-            ).catch(() => {});
             return res.status(401).json({ error: 'Session expired. Please re-authenticate the account via Add New Hotmail.' });
         }
 
-        // Fetch inbox emails
+        // Fetch inbox emails from Microsoft Graph API
         const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=10&$select=id,sender,subject,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime DESC`;
         const graphResponse = await fetch(graphUrl, {
             headers: { 'Authorization': `Bearer ${accessToken}` }
@@ -277,24 +306,22 @@ app.get('/api/emails/:email', authenticateAdmin, async (req, res) => {
         if (!graphResponse.ok) {
             const errText = await graphResponse.text();
             if (graphResponse.status === 401 || errText.includes('invalid_grant')) {
-                // Always use findOneAndUpdate to guarantee status saved to MongoDB
-                await Account.findOneAndUpdate(
-                    { email: req.params.email },
-                    { status: 'blocked' }
-                ).catch(() => {});
+                accountDoc.status = 'blocked';
+                await accountDoc.save().catch(() => {});
+                invalidateEmailCache(emailKey);
             }
             throw new Error(`Microsoft returned an error: ${graphResponse.statusText} - ${errText}`);
         }
 
-        // Auto-heal status to active if call succeeds — always persist to MongoDB
+        // Auto-heal status to active if call succeeds
         if (accountDoc.status === 'blocked') {
-            await Account.findOneAndUpdate(
-                { email: req.params.email },
-                { status: 'active' }
-            ).catch(() => {});
+            accountDoc.status = 'active';
+            await accountDoc.save().catch(() => {});
         }
 
         const data = await graphResponse.json();
+        // ⚡ SPEED: Save result in 60-second cache
+        setEmailCache(emailKey, data.value);
         res.json(data.value);
     } catch (error) {
         console.error('Error fetching emails:', error);
@@ -445,9 +472,11 @@ app.post('/api/customers/unlock-inbox', async (req, res) => {
         return res.status(400).json({ error: 'Customer Access OTP, Hotmail Email, and Share OTP code are required.' });
     }
     try {
-        await warmUpCache();
-
-        const customer = await Customer.findOne({ otp: customerOtp.trim() });
+        // ⚡ SPEED: Run customer lookup and cache warm-up in parallel
+        const [customer] = await Promise.all([
+            Customer.findOne({ otp: customerOtp.trim() }),
+            warmUpCache()
+        ]);
         if (!customer) {
             return res.status(401).json({ error: 'Invalid Security Access OTP.' });
         }
@@ -456,61 +485,69 @@ app.post('/api/customers/unlock-inbox', async (req, res) => {
             return res.status(403).json({ error: 'Access Denied: This Hotmail address is not assigned to your Customer profile.' });
         }
 
-        const accountDoc = await Account.findOne({ email: normalizedEmail });
+        // ⚡ SPEED: Run Account lookup and Share lookup in parallel
+        const [accountDoc, matchingShares] = await Promise.all([
+            Account.findOne({ email: normalizedEmail }),
+            Share.find({ otp: shareOtp.trim() })
+        ]);
         if (!accountDoc) {
             return res.status(404).json({ error: 'Hotmail account not found in system.' });
         }
 
-        let accessToken = null;
-        try {
-            const msalAccount = await getMsalAccount(accountDoc.homeAccountId, accountDoc.email);
-            if (msalAccount) {
-                const tokenResponse = await cca.acquireTokenSilent({
-                    account: msalAccount,
-                    scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
-                });
-                accessToken = tokenResponse.accessToken;
-                await saveMsalCache();
+        // ⚡ SPEED: Check 60-second in-memory email cache before hitting Graph API
+        const cacheKey = `unlock_${normalizedEmail}`;
+        let allMessages = getEmailCache(cacheKey);
+        if (!allMessages) {
+            let accessToken = null;
+            try {
+                const msalAccount = await getMsalAccount(accountDoc.homeAccountId, accountDoc.email);
+                if (msalAccount) {
+                    const tokenResponse = await cca.acquireTokenSilent({
+                        account: msalAccount,
+                        scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
+                    });
+                    accessToken = tokenResponse.accessToken;
+                    await saveMsalCache();
+                }
+            } catch (msalErr) {
+                console.warn(`MSAL silent token failed for ${normalizedEmail}:`, msalErr.message);
             }
-        } catch (msalErr) {
-            console.warn(`MSAL silent token failed for ${normalizedEmail}:`, msalErr.message);
+
+            if (!accessToken && accountDoc.accessToken && accountDoc.accessToken !== 'managed-by-msal-cache' && accountDoc.accessToken.includes('.')) {
+                accessToken = accountDoc.accessToken;
+            }
+
+            if (!accessToken) {
+                if (accountDoc.status !== 'blocked') {
+                    accountDoc.status = 'blocked';
+                    await accountDoc.save().catch(() => {});
+                }
+                return res.status(401).json({ error: 'Account session expired. Please contact admin to re-authenticate.' });
+            }
+
+            const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=25&$select=id,sender,subject,bodyPreview,body,receivedDateTime&$orderby=receivedDateTime DESC`;
+            const fetchResponse = await fetch(graphUrl, {
+                headers: { Authorization: `Bearer ${accessToken}` }
+            });
+
+            if (!fetchResponse.ok) {
+                const errText = await fetchResponse.text();
+                return res.status(fetchResponse.status).json({ error: `Microsoft Graph API error: ${errText}` });
+            }
+
+            if (accountDoc.status === 'blocked') {
+                accountDoc.status = 'active';
+                await accountDoc.save().catch(() => {});
+            }
+
+            const emailData = await fetchResponse.json();
+            allMessages = emailData.value || [];
+            // ⚡ SPEED: Cache the raw inbox result for 60 seconds
+            setEmailCache(cacheKey, allMessages);
         }
 
-        if (!accessToken && accountDoc.accessToken && accountDoc.accessToken !== 'managed-by-msal-cache' && accountDoc.accessToken.includes('.')) {
-            accessToken = accountDoc.accessToken;
-        }
-
-        if (!accessToken) {
-            // Always persist blocked status to MongoDB — guarantees refresh shows correct state
-            await Account.findOneAndUpdate(
-                { email: normalizedEmail },
-                { status: 'blocked' }
-            ).catch(() => {});
-            return res.status(401).json({ error: 'Account session expired. Please contact admin to re-authenticate.' });
-        }
-
-        // Fetch top 25 messages from Inbox folder
-        const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=25&$select=id,sender,subject,bodyPreview,body,receivedDateTime&$orderby=receivedDateTime DESC`;
-        const fetchResponse = await fetch(graphUrl, {
-            headers: { Authorization: `Bearer ${accessToken}` }
-        });
-
-        if (!fetchResponse.ok) {
-            const errText = await fetchResponse.text();
-            return res.status(fetchResponse.status).json({ error: `Microsoft Graph API error: ${errText}` });
-        }
-
-        if (accountDoc.status === 'blocked') {
-            accountDoc.status = 'active';
-            await accountDoc.save().catch(() => {});
-        }
-
-        const emailData = await fetchResponse.json();
-        const allMessages = emailData.value || [];
-
-        // Determine filter parameters (support ALL language filters created for this OTP code)
+        // Apply subject filters (in-memory, zero extra API calls)
         let rawQuery = shareOtp.trim();
-        const matchingShares = await Share.find({ otp: rawQuery });
         let subjectQueries = [];
         if (matchingShares && matchingShares.length > 0) {
             subjectQueries = matchingShares.map(s => s.subjectQuery.trim().toLowerCase()).filter(Boolean);
@@ -518,7 +555,6 @@ app.post('/api/customers/unlock-inbox', async (req, res) => {
             subjectQueries = [rawQuery.toLowerCase()];
         }
 
-        // Filter messages in JS (case-insensitive across ALL language filters)
         let filteredMessages = allMessages;
         if (subjectQueries.length > 0) {
             const matching = allMessages.filter(m => {
@@ -531,8 +567,8 @@ app.post('/api/customers/unlock-inbox', async (req, res) => {
             }
         }
 
-        const displayFilter = matchingShares.length > 0 
-            ? matchingShares.map(s => s.subjectQuery).join(', ') 
+        const displayFilter = matchingShares.length > 0
+            ? matchingShares.map(s => s.subjectQuery).join(', ')
             : (rawQuery || 'Inbox Feed');
 
         res.json({
@@ -554,9 +590,11 @@ app.post('/api/customers/emails', async (req, res) => {
         return res.status(400).json({ error: 'Customer Access OTP and Hotmail Email are required.' });
     }
     try {
-        await warmUpCache();
-
-        const customer = await Customer.findOne({ otp: customerOtp.trim() });
+        // ⚡ SPEED: Run customer lookup and cache warm-up in parallel
+        const [customer] = await Promise.all([
+            Customer.findOne({ otp: customerOtp.trim() }),
+            warmUpCache()
+        ]);
         if (!customer) {
             return res.status(401).json({ error: 'Invalid Customer Access OTP.' });
         }
@@ -565,47 +603,58 @@ app.post('/api/customers/emails', async (req, res) => {
             return res.status(403).json({ error: 'This Hotmail address is not assigned to your Customer profile.' });
         }
 
-        const accountDoc = await Account.findOne({ email: normalizedEmail });
+        // ⚡ SPEED: Run Account lookup and Share lookup in parallel
+        const rawQuery = (subjectFilter || '').trim();
+        const [accountDoc, matchingShares] = await Promise.all([
+            Account.findOne({ email: normalizedEmail }),
+            Share.find({ otp: rawQuery })
+        ]);
         if (!accountDoc) {
             return res.status(404).json({ error: 'Hotmail account not found in system.' });
         }
 
-        let accessToken = null;
-        try {
-            const msalAccount = await getMsalAccount(accountDoc.homeAccountId, accountDoc.email);
-            if (msalAccount) {
-                const tokenResponse = await cca.acquireTokenSilent({
-                    account: msalAccount,
-                    scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
-                });
-                accessToken = tokenResponse.accessToken;
-                await saveMsalCache();
+        // ⚡ SPEED: Check 60-second in-memory email cache before hitting Graph API
+        const cacheKey = `customer_${normalizedEmail}`;
+        let allMessages = getEmailCache(cacheKey);
+        if (!allMessages) {
+            let accessToken = null;
+            try {
+                const msalAccount = await getMsalAccount(accountDoc.homeAccountId, accountDoc.email);
+                if (msalAccount) {
+                    const tokenResponse = await cca.acquireTokenSilent({
+                        account: msalAccount,
+                        scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
+                    });
+                    accessToken = tokenResponse.accessToken;
+                    await saveMsalCache();
+                }
+            } catch (err) {}
+
+            if (!accessToken && accountDoc.accessToken && accountDoc.accessToken !== 'managed-by-msal-cache' && accountDoc.accessToken.includes('.')) {
+                accessToken = accountDoc.accessToken;
             }
-        } catch (err) {}
 
-        if (!accessToken && accountDoc.accessToken && accountDoc.accessToken !== 'managed-by-msal-cache' && accountDoc.accessToken.includes('.')) {
-            accessToken = accountDoc.accessToken;
+            if (!accessToken) {
+                return res.status(401).json({ error: 'Account session expired. Please contact admin.' });
+            }
+
+            const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=25&$select=id,sender,subject,bodyPreview,body,receivedDateTime&$orderby=receivedDateTime DESC`;
+            const fetchResponse = await fetch(graphUrl, {
+                headers: { Authorization: `Bearer ${accessToken}` }
+            });
+
+            if (!fetchResponse.ok) {
+                const errText = await fetchResponse.text();
+                return res.status(fetchResponse.status).json({ error: `Microsoft Graph API error: ${errText}` });
+            }
+
+            const emailData = await fetchResponse.json();
+            allMessages = emailData.value || [];
+            // ⚡ SPEED: Cache the raw inbox result for 60 seconds
+            setEmailCache(cacheKey, allMessages);
         }
 
-        if (!accessToken) {
-            return res.status(401).json({ error: 'Account session expired. Please contact admin.' });
-        }
-
-        const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=25&$select=id,sender,subject,bodyPreview,body,receivedDateTime&$orderby=receivedDateTime DESC`;
-        const fetchResponse = await fetch(graphUrl, {
-            headers: { Authorization: `Bearer ${accessToken}` }
-        });
-
-        if (!fetchResponse.ok) {
-            const errText = await fetchResponse.text();
-            return res.status(fetchResponse.status).json({ error: `Microsoft Graph API error: ${errText}` });
-        }
-
-        const emailData = await fetchResponse.json();
-        const allMessages = emailData.value || [];
-
-        let rawQuery = (subjectFilter || '').trim();
-        const matchingShares = await Share.find({ otp: rawQuery });
+        // Apply subject filters in-memory (no extra API calls)
         let subjectQueries = [];
         if (matchingShares && matchingShares.length > 0) {
             subjectQueries = matchingShares.map(s => s.subjectQuery.trim().toLowerCase()).filter(Boolean);
