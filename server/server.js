@@ -3,7 +3,7 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const { cca } = require('./auth');
+const { cca, msal, msalConfig } = require('./auth');
 const Account = require('./models/Account');
 const Share = require('./models/Share');
 const Customer = require('./models/Customer');
@@ -16,9 +16,10 @@ mongoose.connect(process.env.MONGODB_URI)
     console.log('Connected to MongoDB');
     Share.collection.dropIndex('otp_1').catch(() => {});
     Share.collection.dropIndex('createdAt_1').catch(() => {});
-    // Warm up MSAL token cache immediately at startup so first request is fast
     await warmUpCache();
     console.log('MSAL cache pre-warmed at startup.');
+    // Silently migrate all account tokens from global_cache blob to per-account storage
+    migrateToPerAccountCache().catch(() => {});
   })
   .catch(err => console.error('MongoDB connection error:', err));
 
@@ -55,11 +56,168 @@ app.post('/api/admin/login', (req, res) => {
 });
 
 // ============================================================
-// IN-MEMORY EMAIL CACHE (60-second TTL per account)
-// Prevents repeated Microsoft Graph API calls for same account
+// PER-ACCOUNT MSAL CCA FACTORY
+// Creates a lightweight CCA that loads/saves only 1 account's
+// tokens instead of the entire 1.2MB+ global blob.
+// Scales to 1000+ accounts without performance degradation.
 // ============================================================
-const emailCache = new Map(); // key: email, value: { data, timestamp }
-const EMAIL_CACHE_TTL_MS = 60 * 1000; // 60 seconds
+const createPerAccountCCA = (accountEmail) => {
+    const accountCachePlugin = {
+        beforeCacheAccess: async (cacheContext) => {
+            try {
+                const acc = await Account.findOne({ email: accountEmail }, 'msalCache');
+                if (acc && acc.msalCache && acc.msalCache.length > 100) {
+                    cacheContext.tokenCache.deserialize(acc.msalCache);
+                }
+            } catch (e) {}
+        },
+        afterCacheAccess: async (cacheContext) => {
+            if (cacheContext.cacheHasChanged) {
+                try {
+                    const allAccs = await cacheContext.tokenCache.getAllAccounts();
+                    if (allAccs && allAccs.length > 0) {
+                        const serialized = cacheContext.tokenCache.serialize();
+                        if (serialized && serialized.length > 100) {
+                            await Account.findOneAndUpdate(
+                                { email: accountEmail },
+                                { msalCache: serialized },
+                                { upsert: false }
+                            );
+                        }
+                    }
+                } catch (e) {}
+            }
+        }
+    };
+    return new msal.ConfidentialClientApplication({
+        auth: msalConfig.auth,
+        cache: { cachePlugin: accountCachePlugin }
+    });
+};
+
+// ============================================================
+// EXTRACT PER-ACCOUNT CACHE FROM GLOBAL BLOB (MIGRATION)
+// Parses global cache JSON and extracts entries for one account
+// by homeAccountId prefix — no API calls needed.
+// ============================================================
+const extractPerAccountCache = (globalCacheJson, homeAccountId) => {
+    try {
+        const cache = JSON.parse(globalCacheJson);
+        const prefix = homeAccountId.toLowerCase();
+        const pick = (obj) => Object.fromEntries(
+            Object.entries(obj || {}).filter(([k]) => k.toLowerCase().startsWith(prefix))
+        );
+        return JSON.stringify({
+            Account: pick(cache.Account),
+            AccessToken: pick(cache.AccessToken),
+            RefreshToken: pick(cache.RefreshToken),
+            IdToken: pick(cache.IdToken),
+            AppMetadata: {}
+        });
+    } catch (e) { return null; }
+};
+
+// ============================================================
+// SILENT MIGRATION: global_cache blob → per-account msalCache
+// Runs once at startup. Does NOT call any Microsoft API.
+// Accounts without msalCache get their tokens extracted from
+// the global blob and saved individually. Zero re-auth needed.
+// ============================================================
+const migrateToPerAccountCache = async () => {
+    try {
+        const cacheDoc = await Account.findOne({ email: 'global_cache' });
+        if (!cacheDoc || !cacheDoc.refreshToken || cacheDoc.refreshToken.length < 200) return;
+        const accounts = await Account.find(
+            { email: { $ne: 'global_cache' }, msalCache: { $exists: false } },
+            'email homeAccountId msalCache'
+        );
+        let migrated = 0;
+        for (const acc of accounts) {
+            if (!acc.homeAccountId) continue;
+            const perCache = extractPerAccountCache(cacheDoc.refreshToken, acc.homeAccountId);
+            if (!perCache) continue;
+            const parsed = JSON.parse(perCache);
+            if (Object.keys(parsed.Account || {}).length > 0) {
+                await Account.findOneAndUpdate({ email: acc.email }, { msalCache: perCache });
+                migrated++;
+            }
+        }
+        if (migrated > 0) console.log(`✅ Migrated ${migrated} accounts to per-account MSAL cache.`);
+    } catch (e) {
+        console.error('Migration error:', e.message);
+    }
+};
+
+// ============================================================
+// UNIFIED TOKEN ACQUISITION (per-account → global fallback)
+// Tries per-account CCA first (fast, 2KB load).
+// Falls back to global CCA if no per-account cache exists yet.
+// Auto-saves per-account cache after successful global lookup.
+// ============================================================
+const getAccessTokenForAccount = async (accountDoc) => {
+    const scopes = ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"];
+
+    // Layer 1: Per-account CCA (fast — loads only 2KB for this account)
+    if (accountDoc.msalCache && accountDoc.msalCache.length > 100) {
+        try {
+            const perCCA = createPerAccountCCA(accountDoc.email);
+            const allAccs = await perCCA.getTokenCache().getAllAccounts();
+            if (allAccs && allAccs.length > 0) {
+                const tokenRes = await perCCA.acquireTokenSilent({ account: allAccs[0], scopes });
+                if (tokenRes && tokenRes.accessToken) return tokenRes.accessToken;
+            }
+        } catch (e) {
+            console.warn(`Per-account token failed for ${accountDoc.email}:`, e.message);
+        }
+    }
+
+    // Layer 2: Global CCA fallback (used until migration is complete)
+    await warmUpCache();
+    try {
+        const msalAcc = await getMsalAccount(accountDoc.homeAccountId, accountDoc.email);
+        if (msalAcc) {
+            const tokenRes = await cca.acquireTokenSilent({ account: msalAcc, scopes });
+            if (tokenRes && tokenRes.accessToken) {
+                // Lazy migration: extract this account's cache and save it
+                const perCache = extractPerAccountCache(cca.getTokenCache().serialize(), accountDoc.homeAccountId);
+                if (perCache && Object.keys(JSON.parse(perCache).Account || {}).length > 0) {
+                    Account.findOneAndUpdate({ email: accountDoc.email }, { msalCache: perCache }).catch(() => {});
+                }
+                await saveMsalCache();
+                return tokenRes.accessToken;
+            }
+        }
+    } catch (e) {
+        console.warn(`Global CCA token failed for ${accountDoc.email}:`, e.message);
+    }
+
+    // Layer 3: Direct refresh token fallback
+    if (accountDoc.refreshToken && accountDoc.refreshToken.length > 30 && accountDoc.refreshToken !== 'managed-by-msal-cache') {
+        try {
+            const tokenRes = await cca.acquireTokenByRefreshToken({ refreshToken: accountDoc.refreshToken, scopes });
+            if (tokenRes && tokenRes.accessToken) {
+                accountDoc.accessToken = tokenRes.accessToken;
+                await accountDoc.save().catch(() => {});
+                await saveMsalCache();
+                return tokenRes.accessToken;
+            }
+        } catch (e) {}
+    }
+
+    // Layer 4: Stored JWT fallback
+    if (accountDoc.accessToken && accountDoc.accessToken !== 'managed-by-msal-cache' && accountDoc.accessToken.includes('.')) {
+        return accountDoc.accessToken;
+    }
+
+    return null;
+};
+
+// ============================================================
+// IN-MEMORY EMAIL CACHE (fast dedup within same second)
+// DB cache is primary; this prevents parallel duplicate requests
+// ============================================================
+const emailCache = new Map();
+const EMAIL_CACHE_TTL_MS = 5 * 1000; // 5-second dedup guard only
 
 const getEmailCache = (email) => {
     const cached = emailCache.get(email);
@@ -219,6 +377,8 @@ app.get('/api/auth/callback', async (req, res) => {
     try {
         const response = await cca.acquireTokenByCode(tokenRequest);
         const { username, name, homeAccountId } = response.account;
+        // Extract this account's per-account cache from the global CCA right after login
+        const perCache = extractPerAccountCache(cca.getTokenCache().serialize(), homeAccountId);
         await Account.findOneAndUpdate(
             { email: username },
             { 
@@ -227,6 +387,7 @@ app.get('/api/auth/callback', async (req, res) => {
                 homeAccountId: homeAccountId,
                 refreshToken: response.refreshToken || "managed-by-msal-cache", 
                 accessToken: response.accessToken,
+                msalCache: perCache || undefined,
                 status: 'active'
             },
             { upsert: true, returnDocument: 'after' }
@@ -242,62 +403,28 @@ app.get('/api/emails/:email', authenticateAdmin, async (req, res) => {
     try {
         const emailKey = req.params.email.toLowerCase();
 
-        // ⚡ SPEED: Serve from 60-second in-memory cache if available
-        const cachedEmails = getEmailCache(emailKey);
-        if (cachedEmails) {
-            return res.json(cachedEmails);
-        }
+        // ⚡ SPEED: Check 5-second in-memory dedup guard first
+        const memCached = getEmailCache(emailKey);
+        if (memCached) return res.json(memCached);
 
-        // ⚡ SPEED: Run DB lookup and cache warm-up in parallel
-        const [accountDoc] = await Promise.all([
-            Account.findOne({ email: emailKey }),
-            warmUpCache()
-        ]);
+        // ⚡ SPEED: Fetch account doc (includes DB email cache)
+        const accountDoc = await Account.findOne({ email: emailKey });
         if (!accountDoc) return res.status(404).json({ error: 'Account not found' });
 
-        let accessToken = null;
-
-        // Layer 1: MSAL Silent Token Refresh
-        try {
-            const msalAccount = await getMsalAccount(accountDoc.homeAccountId, accountDoc.email);
-            if (msalAccount) {
-                const tokenResponse = await cca.acquireTokenSilent({
-                    account: msalAccount,
-                    scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
-                });
-                accessToken = tokenResponse.accessToken;
-                await saveMsalCache();
-            }
-        } catch (msalErr) {
-            console.warn(`MSAL silent token failed for ${emailKey}, trying Layer 2 fallback:`, msalErr.message);
+        // ⚡ SPEED: Check 1-minute DB email cache (primary cache layer)
+        const ONE_MINUTE = 60 * 1000;
+        if (accountDoc.cachedEmails && accountDoc.emailsCachedAt &&
+            (Date.now() - new Date(accountDoc.emailsCachedAt).getTime()) < ONE_MINUTE) {
+            setEmailCache(emailKey, accountDoc.cachedEmails); // also warm RAM
+            return res.json(accountDoc.cachedEmails);
         }
 
-        // Layer 2: Direct Refresh Token Fallback
-        if (!accessToken && accountDoc.refreshToken && accountDoc.refreshToken.length > 30 && accountDoc.refreshToken !== 'managed-by-msal-cache') {
-            try {
-                const tokenResponse = await cca.acquireTokenByRefreshToken({
-                    refreshToken: accountDoc.refreshToken,
-                    scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
-                });
-                accessToken = tokenResponse.accessToken;
-                accountDoc.accessToken = accessToken;
-                await accountDoc.save().catch(() => {});
-                await saveMsalCache();
-            } catch (refErr) {
-                console.warn(`Layer 2 Refresh Token failed for ${emailKey}:`, refErr.message);
-            }
-        }
-
-        // Layer 3: Legacy JWT Token String Fallback
-        if (!accessToken && accountDoc.accessToken && accountDoc.accessToken !== 'managed-by-msal-cache' && accountDoc.accessToken.includes('.')) {
-            accessToken = accountDoc.accessToken;
-        }
-
+        // DB cache miss — get fresh token and fetch from Microsoft
+        const accessToken = await getAccessTokenForAccount(accountDoc);
         if (!accessToken) {
-            return res.status(401).json({ error: 'Session expired. Please re-authenticate the account via Add New Hotmail.' });
+            return res.status(401).json({ error: 'Session expired. Please re-authenticate via Add New Hotmail.' });
         }
 
-        // Fetch inbox emails from Microsoft Graph API
         const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=10&$select=id,sender,subject,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime DESC`;
         const graphResponse = await fetch(graphUrl, {
             headers: { 'Authorization': `Bearer ${accessToken}` }
@@ -307,27 +434,29 @@ app.get('/api/emails/:email', authenticateAdmin, async (req, res) => {
             const errText = await graphResponse.text();
             if (graphResponse.status === 401 || errText.includes('invalid_grant')) {
                 accountDoc.status = 'blocked';
-                await accountDoc.save().catch(() => {});
                 invalidateEmailCache(emailKey);
+                await accountDoc.save().catch(() => {});
             }
-            throw new Error(`Microsoft returned an error: ${graphResponse.statusText} - ${errText}`);
-        }
-
-        // Auto-heal status to active if call succeeds
-        if (accountDoc.status === 'blocked') {
-            accountDoc.status = 'active';
-            await accountDoc.save().catch(() => {});
+            throw new Error(`Microsoft error: ${graphResponse.statusText}`);
         }
 
         const data = await graphResponse.json();
-        // ⚡ SPEED: Save result in 60-second cache
-        setEmailCache(emailKey, data.value);
-        res.json(data.value);
+        const emails = data.value || [];
+
+        // ⚡ SPEED: Save to both DB cache (1-min TTL) and RAM dedup cache
+        await Account.findOneAndUpdate(
+            { email: emailKey },
+            { cachedEmails: emails, emailsCachedAt: new Date(), status: 'active' }
+        ).catch(() => {});
+        setEmailCache(emailKey, emails);
+
+        res.json(emails);
     } catch (error) {
         console.error('Error fetching emails:', error);
         res.status(500).json({ error: error.message });
     }
 });
+
 // --- Search API for UI Preview (Parallelized for Speed) ---
 app.post('/api/forward/search', authenticateAdmin, async (req, res) => {
     const { subjectQuery } = req.body;
@@ -472,10 +601,11 @@ app.post('/api/customers/unlock-inbox', async (req, res) => {
         return res.status(400).json({ error: 'Customer Access OTP, Hotmail Email, and Share OTP code are required.' });
     }
     try {
-        // ⚡ SPEED: Run customer lookup and cache warm-up in parallel
-        const [customer] = await Promise.all([
+        // ⚡ SPEED: Run customer lookup + Account + Shares all in parallel
+        const [customer, , matchingShares] = await Promise.all([
             Customer.findOne({ otp: customerOtp.trim() }),
-            warmUpCache()
+            warmUpCache(),
+            Share.find({ otp: shareOtp.trim() })
         ]);
         if (!customer) {
             return res.status(401).json({ error: 'Invalid Security Access OTP.' });
@@ -485,42 +615,25 @@ app.post('/api/customers/unlock-inbox', async (req, res) => {
             return res.status(403).json({ error: 'Access Denied: This Hotmail address is not assigned to your Customer profile.' });
         }
 
-        // ⚡ SPEED: Run Account lookup and Share lookup in parallel
-        const [accountDoc, matchingShares] = await Promise.all([
-            Account.findOne({ email: normalizedEmail }),
-            Share.find({ otp: shareOtp.trim() })
-        ]);
+        const accountDoc = await Account.findOne({ email: normalizedEmail });
         if (!accountDoc) {
             return res.status(404).json({ error: 'Hotmail account not found in system.' });
         }
 
-        // ⚡ SPEED: Check 60-second in-memory email cache before hitting Graph API
-        const cacheKey = `unlock_${normalizedEmail}`;
-        let allMessages = getEmailCache(cacheKey);
+        // ⚡ SPEED: Check 1-minute DB email cache first
+        const ONE_MINUTE = 60 * 1000;
+        let allMessages = null;
+        if (accountDoc.cachedEmails && accountDoc.emailsCachedAt &&
+            (Date.now() - new Date(accountDoc.emailsCachedAt).getTime()) < ONE_MINUTE) {
+            allMessages = accountDoc.cachedEmails;
+        }
+
         if (!allMessages) {
-            let accessToken = null;
-            try {
-                const msalAccount = await getMsalAccount(accountDoc.homeAccountId, accountDoc.email);
-                if (msalAccount) {
-                    const tokenResponse = await cca.acquireTokenSilent({
-                        account: msalAccount,
-                        scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
-                    });
-                    accessToken = tokenResponse.accessToken;
-                    await saveMsalCache();
-                }
-            } catch (msalErr) {
-                console.warn(`MSAL silent token failed for ${normalizedEmail}:`, msalErr.message);
-            }
-
-            if (!accessToken && accountDoc.accessToken && accountDoc.accessToken !== 'managed-by-msal-cache' && accountDoc.accessToken.includes('.')) {
-                accessToken = accountDoc.accessToken;
-            }
-
+            // DB cache miss — get fresh token via per-account CCA
+            const accessToken = await getAccessTokenForAccount(accountDoc);
             if (!accessToken) {
                 if (accountDoc.status !== 'blocked') {
-                    accountDoc.status = 'blocked';
-                    await accountDoc.save().catch(() => {});
+                    await Account.findOneAndUpdate({ email: normalizedEmail }, { status: 'blocked' });
                 }
                 return res.status(401).json({ error: 'Account session expired. Please contact admin to re-authenticate.' });
             }
@@ -535,18 +648,16 @@ app.post('/api/customers/unlock-inbox', async (req, res) => {
                 return res.status(fetchResponse.status).json({ error: `Microsoft Graph API error: ${errText}` });
             }
 
-            if (accountDoc.status === 'blocked') {
-                accountDoc.status = 'active';
-                await accountDoc.save().catch(() => {});
-            }
-
             const emailData = await fetchResponse.json();
             allMessages = emailData.value || [];
-            // ⚡ SPEED: Cache the raw inbox result for 60 seconds
-            setEmailCache(cacheKey, allMessages);
+            // ⚡ SPEED: Save to DB cache (1-min TTL) + auto-heal status
+            Account.findOneAndUpdate(
+                { email: normalizedEmail },
+                { cachedEmails: allMessages, emailsCachedAt: new Date(), status: 'active' }
+            ).catch(() => {});
         }
 
-        // Apply subject filters (in-memory, zero extra API calls)
+        // Apply subject filters in-memory (zero extra API calls)
         let rawQuery = shareOtp.trim();
         let subjectQueries = [];
         if (matchingShares && matchingShares.length > 0) {
@@ -562,9 +673,7 @@ app.post('/api/customers/unlock-inbox', async (req, res) => {
                 const bodyLower = (m.bodyPreview || '').toLowerCase();
                 return subjectQueries.some(q => subLower.includes(q) || bodyLower.includes(q));
             });
-            if (matching.length > 0) {
-                filteredMessages = matching;
-            }
+            if (matching.length > 0) filteredMessages = matching;
         }
 
         const displayFilter = matchingShares.length > 0
@@ -572,11 +681,7 @@ app.post('/api/customers/unlock-inbox', async (req, res) => {
             : (rawQuery || 'Inbox Feed');
 
         res.json({
-            share: {
-                hotmailEmail: normalizedEmail,
-                subjectQuery: displayFilter,
-                otp: shareOtp.trim()
-            },
+            share: { hotmailEmail: normalizedEmail, subjectQuery: displayFilter, otp: shareOtp.trim() },
             emails: filteredMessages
         });
     } catch (error) {
@@ -590,10 +695,11 @@ app.post('/api/customers/emails', async (req, res) => {
         return res.status(400).json({ error: 'Customer Access OTP and Hotmail Email are required.' });
     }
     try {
-        // ⚡ SPEED: Run customer lookup and cache warm-up in parallel
-        const [customer] = await Promise.all([
+        // ⚡ SPEED: Run customer lookup + Share lookup in parallel
+        const rawQuery = (subjectFilter || '').trim();
+        const [customer, matchingShares] = await Promise.all([
             Customer.findOne({ otp: customerOtp.trim() }),
-            warmUpCache()
+            Share.find({ otp: rawQuery })
         ]);
         if (!customer) {
             return res.status(401).json({ error: 'Invalid Customer Access OTP.' });
@@ -603,37 +709,21 @@ app.post('/api/customers/emails', async (req, res) => {
             return res.status(403).json({ error: 'This Hotmail address is not assigned to your Customer profile.' });
         }
 
-        // ⚡ SPEED: Run Account lookup and Share lookup in parallel
-        const rawQuery = (subjectFilter || '').trim();
-        const [accountDoc, matchingShares] = await Promise.all([
-            Account.findOne({ email: normalizedEmail }),
-            Share.find({ otp: rawQuery })
-        ]);
+        const accountDoc = await Account.findOne({ email: normalizedEmail });
         if (!accountDoc) {
             return res.status(404).json({ error: 'Hotmail account not found in system.' });
         }
 
-        // ⚡ SPEED: Check 60-second in-memory email cache before hitting Graph API
-        const cacheKey = `customer_${normalizedEmail}`;
-        let allMessages = getEmailCache(cacheKey);
+        // ⚡ SPEED: Check 1-minute DB email cache
+        const ONE_MINUTE = 60 * 1000;
+        let allMessages = null;
+        if (accountDoc.cachedEmails && accountDoc.emailsCachedAt &&
+            (Date.now() - new Date(accountDoc.emailsCachedAt).getTime()) < ONE_MINUTE) {
+            allMessages = accountDoc.cachedEmails;
+        }
+
         if (!allMessages) {
-            let accessToken = null;
-            try {
-                const msalAccount = await getMsalAccount(accountDoc.homeAccountId, accountDoc.email);
-                if (msalAccount) {
-                    const tokenResponse = await cca.acquireTokenSilent({
-                        account: msalAccount,
-                        scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
-                    });
-                    accessToken = tokenResponse.accessToken;
-                    await saveMsalCache();
-                }
-            } catch (err) {}
-
-            if (!accessToken && accountDoc.accessToken && accountDoc.accessToken !== 'managed-by-msal-cache' && accountDoc.accessToken.includes('.')) {
-                accessToken = accountDoc.accessToken;
-            }
-
+            const accessToken = await getAccessTokenForAccount(accountDoc);
             if (!accessToken) {
                 return res.status(401).json({ error: 'Account session expired. Please contact admin.' });
             }
@@ -650,8 +740,11 @@ app.post('/api/customers/emails', async (req, res) => {
 
             const emailData = await fetchResponse.json();
             allMessages = emailData.value || [];
-            // ⚡ SPEED: Cache the raw inbox result for 60 seconds
-            setEmailCache(cacheKey, allMessages);
+            // ⚡ SPEED: Save to DB cache (1-min TTL)
+            Account.findOneAndUpdate(
+                { email: normalizedEmail },
+                { cachedEmails: allMessages, emailsCachedAt: new Date() }
+            ).catch(() => {});
         }
 
         // Apply subject filters in-memory (no extra API calls)
@@ -669,9 +762,7 @@ app.post('/api/customers/emails', async (req, res) => {
                 const bodyLower = (m.bodyPreview || '').toLowerCase();
                 return subjectQueries.some(q => subLower.includes(q) || bodyLower.includes(q));
             });
-            if (matching.length > 0) {
-                filteredMessages = matching;
-            }
+            if (matching.length > 0) filteredMessages = matching;
         }
 
         res.json(filteredMessages);

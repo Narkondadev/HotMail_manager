@@ -50,4 +50,5 @@ const msalConfig = {
     }
 };
 const cca = new msal.ConfidentialClientApplication(msalConfig);
-module.exports = { cca };
+module.exports = { cca, msal, msalConfig };
+
