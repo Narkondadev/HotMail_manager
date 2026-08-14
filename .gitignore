@@ -23,6 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 
-# Secrets
+# Secrets — ALL .env variants (never commit credentials)
 .env
+.env.*
 server/.env
+server/.env.*
+*.env
