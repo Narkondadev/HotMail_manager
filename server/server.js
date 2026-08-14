@@ -425,7 +425,7 @@ app.get('/api/emails/:email', authenticateAdmin, async (req, res) => {
             return res.status(401).json({ error: 'Session expired. Please re-authenticate via Add New Hotmail.' });
         }
 
-        const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=10&$select=id,sender,subject,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime DESC`;
+        const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=6&$select=id,sender,subject,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime DESC`;
         const graphResponse = await fetch(graphUrl, {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
@@ -638,7 +638,7 @@ app.post('/api/customers/unlock-inbox', async (req, res) => {
                 return res.status(401).json({ error: 'Account session expired. Please contact admin to re-authenticate.' });
             }
 
-            const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=25&$select=id,sender,subject,bodyPreview,body,receivedDateTime&$orderby=receivedDateTime DESC`;
+            const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=6&$select=id,sender,subject,bodyPreview,body,receivedDateTime&$orderby=receivedDateTime DESC`;
             const fetchResponse = await fetch(graphUrl, {
                 headers: { Authorization: `Bearer ${accessToken}` }
             });
@@ -728,7 +728,7 @@ app.post('/api/customers/emails', async (req, res) => {
                 return res.status(401).json({ error: 'Account session expired. Please contact admin.' });
             }
 
-            const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=25&$select=id,sender,subject,bodyPreview,body,receivedDateTime&$orderby=receivedDateTime DESC`;
+            const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=6&$select=id,sender,subject,bodyPreview,body,receivedDateTime&$orderby=receivedDateTime DESC`;
             const fetchResponse = await fetch(graphUrl, {
                 headers: { Authorization: `Bearer ${accessToken}` }
             });
@@ -879,7 +879,7 @@ app.get('/api/shares/emails', async (req, res) => {
             return res.status(401).json({ error: 'Session expired. Account requires re-authentication by Admin.' });
         }
 
-        const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=10&$select=sender,subject,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime DESC`;
+        const graphUrl = `https://graph.microsoft.com/v1.0/me/mailFolders('inbox')/messages?$top=6&$select=sender,subject,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime DESC`;
         const graphResponse = await fetch(graphUrl, {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
