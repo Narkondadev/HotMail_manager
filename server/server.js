@@ -260,6 +260,11 @@ app.get('/api/emails/:email', authenticateAdmin, async (req, res) => {
         }
 
         if (!accessToken) {
+            // Always persist blocked status to MongoDB — guarantees refresh shows correct state
+            await Account.findOneAndUpdate(
+                { email: req.params.email },
+                { status: 'blocked' }
+            ).catch(() => {});
             return res.status(401).json({ error: 'Session expired. Please re-authenticate the account via Add New Hotmail.' });
         }
 
@@ -272,16 +277,21 @@ app.get('/api/emails/:email', authenticateAdmin, async (req, res) => {
         if (!graphResponse.ok) {
             const errText = await graphResponse.text();
             if (graphResponse.status === 401 || errText.includes('invalid_grant')) {
-                accountDoc.status = 'blocked';
-                await accountDoc.save().catch(() => {});
+                // Always use findOneAndUpdate to guarantee status saved to MongoDB
+                await Account.findOneAndUpdate(
+                    { email: req.params.email },
+                    { status: 'blocked' }
+                ).catch(() => {});
             }
             throw new Error(`Microsoft returned an error: ${graphResponse.statusText} - ${errText}`);
         }
 
-        // Auto-heal status to active if call succeeds
+        // Auto-heal status to active if call succeeds — always persist to MongoDB
         if (accountDoc.status === 'blocked') {
-            accountDoc.status = 'active';
-            await accountDoc.save().catch(() => {});
+            await Account.findOneAndUpdate(
+                { email: req.params.email },
+                { status: 'active' }
+            ).catch(() => {});
         }
 
         const data = await graphResponse.json();
@@ -471,10 +481,11 @@ app.post('/api/customers/unlock-inbox', async (req, res) => {
         }
 
         if (!accessToken) {
-            if (accountDoc.status !== 'blocked') {
-                accountDoc.status = 'blocked';
-                await accountDoc.save().catch(() => {});
-            }
+            // Always persist blocked status to MongoDB — guarantees refresh shows correct state
+            await Account.findOneAndUpdate(
+                { email: normalizedEmail },
+                { status: 'blocked' }
+            ).catch(() => {});
             return res.status(401).json({ error: 'Account session expired. Please contact admin to re-authenticate.' });
         }
 
