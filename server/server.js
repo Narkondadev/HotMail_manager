@@ -288,12 +288,18 @@ const getMsalAccount = async (homeAccountId, userEmail) => {
 };
 app.get('/api/accounts', authenticateAdmin, async (req, res) => {
     try {
-        const accounts = await Account.find({ email: { $ne: 'global_cache' } }, '-refreshToken -accessToken'); 
+        // ⚡ IMPORTANT: Exclude large cache fields (msalCache, cachedEmails) from list
+        // These fields are server-side only and must NOT be sent to the frontend
+        const accounts = await Account.find(
+            { email: { $ne: 'global_cache' } },
+            '-refreshToken -accessToken -msalCache -cachedEmails -emailsCachedAt'
+        ); 
         res.json(accounts);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
+
 
 
 
