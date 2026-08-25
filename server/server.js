@@ -12,16 +12,16 @@ const PORT = process.env.PORT || 5001;
 app.use(cors());
 app.use(express.json());
 mongoose.connect(process.env.MONGODB_URI)
-  .then(async () => {
-    console.log('Connected to MongoDB');
-    Share.collection.dropIndex('otp_1').catch(() => {});
-    Share.collection.dropIndex('createdAt_1').catch(() => {});
-    await warmUpCache();
-    console.log('MSAL cache pre-warmed at startup.');
-    // Silently migrate all account tokens from global_cache blob to per-account storage
-    migrateToPerAccountCache().catch(() => {});
-  })
-  .catch(err => console.error('MongoDB connection error:', err));
+    .then(async () => {
+        console.log('Connected to MongoDB');
+        Share.collection.dropIndex('otp_1').catch(() => { });
+        Share.collection.dropIndex('createdAt_1').catch(() => { });
+        await warmUpCache();
+        console.log('MSAL cache pre-warmed at startup.');
+        // Silently migrate all account tokens from global_cache blob to per-account storage
+        migrateToPerAccountCache().catch(() => { });
+    })
+    .catch(err => console.error('MongoDB connection error:', err));
 
 const crypto = require('crypto');
 
@@ -34,7 +34,7 @@ const authenticateAdmin = (req, res, next) => {
     const token = authHeader.split(' ')[1];
     const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123';
     const expectedToken = crypto.createHash('sha256').update(adminPassword).digest('hex');
-    
+
     if (token === expectedToken) {
         next();
     } else {
@@ -46,7 +46,7 @@ const authenticateAdmin = (req, res, next) => {
 app.post('/api/admin/login', (req, res) => {
     const { email, password } = req.body;
     const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123';
-    
+
     if (email === 'tuihiyu@gmail.com' && password === adminPassword) {
         const token = crypto.createHash('sha256').update(adminPassword).digest('hex');
         res.json({ success: true, token });
@@ -69,7 +69,7 @@ const createPerAccountCCA = (accountEmail) => {
                 if (acc && acc.msalCache && acc.msalCache.length > 100) {
                     cacheContext.tokenCache.deserialize(acc.msalCache);
                 }
-            } catch (e) {}
+            } catch (e) { }
         },
         afterCacheAccess: async (cacheContext) => {
             if (cacheContext.cacheHasChanged) {
@@ -85,7 +85,7 @@ const createPerAccountCCA = (accountEmail) => {
                             );
                         }
                     }
-                } catch (e) {}
+                } catch (e) { }
             }
         }
     };
@@ -181,7 +181,7 @@ const getAccessTokenForAccount = async (accountDoc) => {
                 // Lazy migration: extract this account's cache and save it
                 const perCache = extractPerAccountCache(cca.getTokenCache().serialize(), accountDoc.homeAccountId);
                 if (perCache && Object.keys(JSON.parse(perCache).Account || {}).length > 0) {
-                    Account.findOneAndUpdate({ email: accountDoc.email }, { msalCache: perCache }).catch(() => {});
+                    Account.findOneAndUpdate({ email: accountDoc.email }, { msalCache: perCache }).catch(() => { });
                 }
                 await saveMsalCache();
                 return tokenRes.accessToken;
@@ -197,11 +197,11 @@ const getAccessTokenForAccount = async (accountDoc) => {
             const tokenRes = await cca.acquireTokenByRefreshToken({ refreshToken: accountDoc.refreshToken, scopes });
             if (tokenRes && tokenRes.accessToken) {
                 accountDoc.accessToken = tokenRes.accessToken;
-                await accountDoc.save().catch(() => {});
+                await accountDoc.save().catch(() => { });
                 await saveMsalCache();
                 return tokenRes.accessToken;
             }
-        } catch (e) {}
+        } catch (e) { }
     }
 
     // Layer 4: Stored JWT fallback
@@ -260,7 +260,7 @@ const saveMsalCache = async () => {
         if (serialized && serialized.length > 200) {
             await Account.findOneAndUpdate(
                 { email: 'global_cache' },
-                { 
+                {
                     email: 'global_cache',
                     name: 'MSAL Global Cache',
                     homeAccountId: 'global_cache_id',
@@ -288,12 +288,10 @@ const getMsalAccount = async (homeAccountId, userEmail) => {
 };
 app.get('/api/accounts', authenticateAdmin, async (req, res) => {
     try {
-        // ⚡ IMPORTANT: Exclude large cache fields (msalCache, cachedEmails) from list
-        // These fields are server-side only and must NOT be sent to the frontend
         const accounts = await Account.find(
             { email: { $ne: 'global_cache' } },
             '-refreshToken -accessToken -msalCache -cachedEmails -emailsCachedAt'
-        ); 
+        );
         res.json(accounts);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -351,7 +349,7 @@ app.post('/api/accounts/verify-one', authenticateAdmin, async (req, res) => {
 
         const newStatus = tokenValid ? 'active' : 'blocked';
         accountDoc.status = newStatus;
-        await accountDoc.save().catch(() => {});
+        await accountDoc.save().catch(() => { });
         await saveMsalCache();
 
         res.json({ success: true, email: accountDoc.email, status: accountDoc.status });
@@ -361,13 +359,18 @@ app.post('/api/accounts/verify-one', authenticateAdmin, async (req, res) => {
     }
 });
 
+// loginCca: no-cache CCA used ONLY for adding new accounts.
+// Never reads/writes the global_cache blob (334 accounts = very large).
+// All existing accounts continue to use createPerAccountCCA() as before.
+const loginCca = new msal.ConfidentialClientApplication({ auth: msalConfig.auth });
+
 app.get('/api/auth/login', async (req, res) => {
     const authCodeUrlParameters = {
         scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
         redirectUri: `${process.env.BACKEND_URL || 'http://localhost:5001'}/api/auth/callback`,
     };
     try {
-        const authUrl = await cca.getAuthCodeUrl(authCodeUrlParameters);
+        const authUrl = await loginCca.getAuthCodeUrl(authCodeUrlParameters);
         res.redirect(authUrl);
     } catch (error) {
         console.error('Error generating auth url:', error);
@@ -381,24 +384,25 @@ app.get('/api/auth/callback', async (req, res) => {
         redirectUri: `${process.env.BACKEND_URL || 'http://localhost:5001'}/api/auth/callback`,
     };
     try {
-        const response = await cca.acquireTokenByCode(tokenRequest);
+        const response = await loginCca.acquireTokenByCode(tokenRequest);
         const { username, name, homeAccountId } = response.account;
-        // Extract this account's per-account cache from the global CCA right after login
-        const perCache = extractPerAccountCache(cca.getTokenCache().serialize(), homeAccountId);
+        // Extract only this new account's tokens — global_cache blob NOT involved
+        const perCache = extractPerAccountCache(loginCca.getTokenCache().serialize(), homeAccountId);
         await Account.findOneAndUpdate(
             { email: username },
-            { 
-                email: username, 
-                name: name || username, 
+            {
+                email: username,
+                name: name || username,
                 homeAccountId: homeAccountId,
-                refreshToken: response.refreshToken || "managed-by-msal-cache", 
+                refreshToken: response.refreshToken || "managed-by-msal-cache",
                 accessToken: response.accessToken,
                 msalCache: perCache || undefined,
                 status: 'active'
             },
             { upsert: true, returnDocument: 'after' }
         );
-        await saveMsalCache();
+        // saveMsalCache() removed — per-account msalCache above is sufficient.
+        // global_cache (334 accounts) is NOT touched during login anymore.
         res.redirect(process.env.FRONTEND_URL || 'http://localhost:5173');
     } catch (error) {
         console.error('Error acquiring token:', error);
@@ -441,7 +445,7 @@ app.get('/api/emails/:email', authenticateAdmin, async (req, res) => {
             if (graphResponse.status === 401 || errText.includes('invalid_grant')) {
                 accountDoc.status = 'blocked';
                 invalidateEmailCache(emailKey);
-                await accountDoc.save().catch(() => {});
+                await accountDoc.save().catch(() => { });
             }
             throw new Error(`Microsoft error: ${graphResponse.statusText}`);
         }
@@ -453,7 +457,7 @@ app.get('/api/emails/:email', authenticateAdmin, async (req, res) => {
         await Account.findOneAndUpdate(
             { email: emailKey },
             { cachedEmails: emails, emailsCachedAt: new Date(), status: 'active' }
-        ).catch(() => {});
+        ).catch(() => { });
         setEmailCache(emailKey, emails);
 
         res.json(emails);
@@ -470,7 +474,7 @@ app.post('/api/forward/search', authenticateAdmin, async (req, res) => {
     try {
         const accounts = await Account.find({ email: { $ne: 'global_cache' } });
         const searchQuery = `subject:'${subjectQuery}' -from:microsoft.com -from:accountprotection.microsoft.com`;
-        
+
         const searchPromises = accounts.map(async (accountDoc) => {
             try {
                 const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
@@ -503,7 +507,7 @@ app.post('/api/forward/search', authenticateAdmin, async (req, res) => {
                 return [];
             }
         });
-        
+
         const resultsArray = await Promise.all(searchPromises);
         const forwardedEmailsList = resultsArray.flat();
         res.json({ matchingEmails: forwardedEmailsList });
@@ -660,7 +664,7 @@ app.post('/api/customers/unlock-inbox', async (req, res) => {
             Account.findOneAndUpdate(
                 { email: normalizedEmail },
                 { cachedEmails: allMessages, emailsCachedAt: new Date(), status: 'active' }
-            ).catch(() => {});
+            ).catch(() => { });
         }
 
         // Apply subject filters in-memory (zero extra API calls)
@@ -750,7 +754,7 @@ app.post('/api/customers/emails', async (req, res) => {
             Account.findOneAndUpdate(
                 { email: normalizedEmail },
                 { cachedEmails: allMessages, emailsCachedAt: new Date() }
-            ).catch(() => {});
+            ).catch(() => { });
         }
 
         // Apply subject filters in-memory (no extra API calls)
@@ -830,14 +834,14 @@ app.post('/api/shares/verify', async (req, res) => {
             return res.status(401).json({ error: 'This Hotmail account is not registered on the platform.' });
         }
         const combinedSubjects = shares.map(s => s.subjectQuery).join(', ');
-        res.json({ 
-            success: true, 
+        res.json({
+            success: true,
             share: {
                 _id: shares[0]._id,
                 otp: otp.trim(),
                 subjectQuery: combinedSubjects,
                 hotmailEmail: accountDoc.email
-            } 
+            }
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -880,7 +884,7 @@ app.get('/api/shares/emails', async (req, res) => {
             // Auto-flag this account as blocked so admin sees red dot immediately
             if (accountDoc.status !== 'blocked') {
                 accountDoc.status = 'blocked';
-                await accountDoc.save().catch(() => {});
+                await accountDoc.save().catch(() => { });
             }
             return res.status(401).json({ error: 'Session expired. Account requires re-authentication by Admin.' });
         }
@@ -894,7 +898,7 @@ app.get('/api/shares/emails', async (req, res) => {
             if (graphResponse.status === 401 || errText.includes('Unauthorized') || errText.includes('invalid_grant')) {
                 if (accountDoc.status !== 'blocked') {
                     accountDoc.status = 'blocked';
-                    await accountDoc.save().catch(() => {});
+                    await accountDoc.save().catch(() => { });
                 }
             }
             throw new Error(`Microsoft returned an error: ${graphResponse.statusText}`);
@@ -902,17 +906,17 @@ app.get('/api/shares/emails', async (req, res) => {
         // Token worked - restore status to active if it was blocked
         if (accountDoc.status === 'blocked') {
             accountDoc.status = 'active';
-            await accountDoc.save().catch(() => {});
+            await accountDoc.save().catch(() => { });
         }
         const data = await graphResponse.json();
-        
+
         const subjectQueries = shares.map(s => s.subjectQuery.trim().toLowerCase()).filter(Boolean);
         const filtered = (data.value || []).filter(msg => {
             if (!msg.subject) return false;
             const lowerSubj = msg.subject.toLowerCase();
             return subjectQueries.some(q => lowerSubj.includes(q));
         });
-        
+
         res.json(filtered);
     } catch (error) {
         res.status(500).json({ error: error.message });
