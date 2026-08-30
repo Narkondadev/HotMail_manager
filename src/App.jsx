@@ -66,6 +66,8 @@ export default function App() {
   const [customers, setCustomers] = useState([]);
   const [isAddingCustomer, setIsAddingCustomer] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
+  const [customerMobileTab, setCustomerMobileTab] = useState('form');
+  const [shareMobileTab, setShareMobileTab] = useState('form');
 
   // Client Portal specific state
   const [isSecurityVerified, setIsSecurityVerified] = useState(false);
@@ -195,7 +197,7 @@ export default function App() {
       const response = await adminFetch(`${API_URL}/api/shares`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           subjectQuery: shareSubject,
           customOtp: customOtp.trim()
         })
@@ -261,7 +263,7 @@ export default function App() {
     if (!customerName || !customerOtp || customerHotmails.length === 0) return;
     setIsAddingCustomer(true);
     try {
-      const url = editingCustomer 
+      const url = editingCustomer
         ? `${API_URL}/api/customers/${editingCustomer._id}`
         : `${API_URL}/api/customers`;
       const method = editingCustomer ? 'PUT' : 'POST';
@@ -269,7 +271,7 @@ export default function App() {
       const response = await adminFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           name: customerName,
           otp: customerOtp.trim(),
           hotmailEmails: customerHotmails
@@ -299,7 +301,7 @@ export default function App() {
   };
 
   const toggleCustomerHotmailSelection = (email) => {
-    setCustomerHotmails(prev => 
+    setCustomerHotmails(prev =>
       prev.includes(email) ? prev.filter(e => e !== email) : [...prev, email]
     );
   };
@@ -497,14 +499,14 @@ export default function App() {
   if (isClientPortal) {
     if (!isSecurityVerified) {
       return (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'linear-gradient(135deg, var(--bg-main) 0%, #f1f5f9 100%)' }}>
-          <div style={{ background: '#fff', padding: '40px', borderRadius: '16px', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', width: '100%', maxWidth: '400px', textAlign: 'center', border: '1px solid var(--border)' }}>
+        <div className="auth-page-container">
+          <div className="auth-card">
             <div style={{ width: '64px', height: '64px', backgroundColor: 'rgba(16, 185, 129, 0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
               <KeyRound size={32} color="var(--accent)" />
             </div>
             <h1 style={{ fontSize: '1.5rem', marginBottom: '10px', color: 'var(--text-main)', fontWeight: '700' }}>Security Gate</h1>
             <p style={{ color: 'var(--text-muted)', marginBottom: '25px', fontSize: '0.9rem' }}>Enter your 6-Digit Customer Access Security OTP code to proceed.</p>
-            
+
             <form onSubmit={handleSecurityGateLogin}>
               <div style={{ marginBottom: '20px' }}>
                 <input
@@ -518,7 +520,7 @@ export default function App() {
                 />
               </div>
               {clientError && <div style={{ color: 'var(--danger)', fontSize: '0.85rem', marginBottom: '20px' }}>{clientError}</div>}
-              
+
               <button
                 type="submit"
                 disabled={clientLoading || !securityOtp}
@@ -534,14 +536,14 @@ export default function App() {
 
     if (!clientVerified) {
       return (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'linear-gradient(135deg, var(--bg-main) 0%, #f1f5f9 100%)' }}>
-          <div style={{ background: '#fff', padding: '40px', borderRadius: '16px', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', width: '100%', maxWidth: '400px', textAlign: 'center', border: '1px solid var(--border)' }}>
+        <div className="auth-page-container">
+          <div className="auth-card">
             <div style={{ width: '64px', height: '64px', backgroundColor: 'rgba(16, 185, 129, 0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
               <Mail size={32} color="var(--accent)" />
             </div>
             <h1 style={{ fontSize: '1.5rem', marginBottom: '10px', color: 'var(--text-main)', fontWeight: '700' }}>User Portal</h1>
             <p style={{ color: 'var(--text-muted)', marginBottom: '25px', fontSize: '0.9rem' }}>Welcome {clientCustomerInfo?.name}! Enter your Hotmail address and OTP code to unlock your inbox.</p>
-            
+
             <form onSubmit={handleClientLogin}>
               <div style={{ marginBottom: '15px' }}>
                 <input
@@ -564,7 +566,7 @@ export default function App() {
                 />
               </div>
               {clientError && <div style={{ color: 'var(--danger)', fontSize: '0.85rem', marginBottom: '20px' }}>{clientError}</div>}
-              
+
               <button
                 type="submit"
                 disabled={clientLoading || !clientHotmail || !clientOtp}
@@ -578,40 +580,56 @@ export default function App() {
       );
     }
 
+    const clientLogout = () => {
+      setIsSecurityVerified(false); setSecurityOtp('');
+      setClientVerified(false); setClientShareInfo(null);
+      setClientCustomerInfo(null); setClientAssignedHotmails([]);
+      setClientHotmail(''); setClientOtp(''); setSelectedClientEmail(null);
+    };
+
     return (
       <div className="app-container">
-        <div className="sidebar" style={{ width: '380px' }}>
+        {/* Inbox list — hidden on mobile when reading an email */}
+        <div className={`sidebar ${selectedClientEmail ? 'mobile-hidden' : ''}`} style={{ width: '380px', minWidth: '280px' }}>
           <div className="sidebar-header" style={{ justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Mail size={24} color="var(--accent)" />
-              <span style={{ fontWeight: 'bold' }}>{clientCustomerInfo ? clientCustomerInfo.name : 'Shared Inbox Feed'}</span>
+              <Mail size={22} color="var(--accent)" />
+              <span>{clientCustomerInfo ? clientCustomerInfo.name : 'Shared Inbox'}</span>
             </div>
-            <button 
-              onClick={() => { setIsSecurityVerified(false); setSecurityOtp(''); setClientVerified(false); setClientShareInfo(null); setClientCustomerInfo(null); setClientAssignedHotmails([]); setClientHotmail(''); setClientOtp(''); setSelectedClientEmail(null); }} 
-              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+            <button
+              onClick={clientLogout}
+              title="Exit portal"
+              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.82rem', fontWeight: '600', padding: '6px 10px', borderRadius: '8px', transition: 'background 0.15s' }}
             >
-              <LogOut size={16} /> Exit
+              <LogOut size={15} /> Exit
             </button>
           </div>
-          <div className="sidebar-content" style={{ padding: '20px' }}>
-            <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: 'rgba(16,185,129,0.05)', borderRadius: '12px', border: '1px solid rgba(16,185,129,0.1)' }}>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '6px' }}>Target Account</div>
-              <div style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--text-main)', wordBreak: 'break-all' }} title={clientShareInfo?.hotmailEmail}>{clientShareInfo?.hotmailEmail}</div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', marginTop: '10px', marginBottom: '6px' }}>Filter matches subject</div>
-              <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '3px 10px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+
+          <div className="sidebar-content" style={{ padding: '16px' }}>
+            {/* Account info card */}
+            <div style={{ marginBottom: '16px', padding: '14px', backgroundColor: 'rgba(16,185,129,0.06)', borderRadius: '12px', border: '1px solid rgba(16,185,129,0.12)' }}>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.05em', marginBottom: '4px' }}>Target Account</div>
+              <div style={{ fontSize: '0.88rem', fontWeight: '600', color: 'var(--text-main)', wordBreak: 'break-all', marginBottom: '10px' }}>{clientShareInfo?.hotmailEmail}</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.05em', marginBottom: '4px' }}>Subject Filter</div>
+              <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#059669', padding: '3px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: '700' }}>
                 "{clientShareInfo?.subjectQuery}"
               </span>
             </div>
+
+            {/* Inbox header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>Inbox Messages</div>
-              <button 
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.05em' }}>Messages ({clientEmails.length})</div>
+              <button
                 onClick={() => handleClientLogin({ preventDefault: () => {} })}
                 disabled={clientLoading}
-                style={{ background: 'none', border: '1px solid var(--border)', padding: '4px 10px', borderRadius: '6px', color: 'var(--accent)', cursor: clientLoading ? 'not-allowed' : 'pointer', fontSize: '0.75rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}
+                style={{ background: 'none', border: '1px solid var(--border-strong)', padding: '4px 10px', borderRadius: '6px', color: 'var(--accent)', cursor: clientLoading ? 'not-allowed' : 'pointer', fontSize: '0.72rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px', transition: 'all 0.15s' }}
               >
-                {clientLoading ? 'Refreshing...' : '↻ Refresh'}
+                <RefreshCw size={11} style={{ animation: clientLoading ? 'spin 1s linear infinite' : 'none' }} />
+                {clientLoading ? 'Refreshing...' : 'Refresh'}
               </button>
             </div>
+
+            {/* Email list */}
             <div className="emails-container" style={{ padding: 0 }}>
               {clientLoading ? (
                 <EmailSkeleton />
@@ -621,46 +639,46 @@ export default function App() {
                     key={email.id}
                     className={`email-item ${selectedClientEmail?.id === email.id ? 'active' : ''}`}
                     onClick={() => setSelectedClientEmail(email)}
-                    style={{ border: '1px solid var(--border)', borderRadius: '10px', marginBottom: '10px' }}
+                    style={{ border: '1px solid var(--border)', borderRadius: '10px', marginBottom: '8px' }}
                   >
                     <div className="email-sender">
                       <span style={{ fontWeight: '600' }}>{email.sender}</span>
                       <span className="email-time">{email.time}</span>
                     </div>
-                    <div className="email-subject" style={{ fontWeight: '500' }}>{email.subject}</div>
+                    <div className="email-subject">{email.subject}</div>
                     <div className="email-preview">{email.preview}</div>
                   </div>
                 ))
               ) : (
-                <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>No messages found.</div>
+                <div style={{ padding: '30px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.88rem' }}>No messages found.</div>
               )}
             </div>
           </div>
         </div>
-        <div className="email-detail-pane" style={{ flex: 1 }}>
+
+        {/* Email detail pane */}
+        <div className={`email-detail-pane ${!selectedClientEmail ? 'mobile-hidden' : ''}`} style={{ flex: 1 }}>
           {selectedClientEmail ? (
             <>
               <div className="detail-header">
+                <button className="mobile-back-btn" onClick={() => setSelectedClientEmail(null)}>
+                  <ArrowLeft size={15} /> Back to Messages
+                </button>
                 <div className="detail-subject">{selectedClientEmail.subject}</div>
                 <div className="detail-meta">
-                  <div className="avatar">
-                    {selectedClientEmail.sender.charAt(0).toUpperCase()}
-                  </div>
+                  <div className="avatar">{selectedClientEmail.sender.charAt(0).toUpperCase()}</div>
                   <div className="meta-info">
                     <span className="meta-sender">{selectedClientEmail.sender}</span>
                     <span className="meta-recipient">To: {clientShareInfo?.hotmailEmail}</span>
                   </div>
                 </div>
               </div>
-              <div
-                className="detail-body"
-                dangerouslySetInnerHTML={{ __html: selectedClientEmail.body }}
-              />
+              <div className="detail-body" dangerouslySetInnerHTML={{ __html: selectedClientEmail.body }} />
             </>
           ) : (
             <div className="empty-state">
-              <Mail size={48} strokeWidth={1} />
-              <p>Select an email to view its details</p>
+              <Mail size={44} strokeWidth={1} />
+              <p>Select an email to view its content</p>
             </div>
           )}
         </div>
@@ -683,14 +701,14 @@ export default function App() {
   // Show login form if at /login and not logged in
   if (!isLoggedIn && isAdminLoginPath) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'linear-gradient(135deg, var(--bg-main) 0%, #f1f5f9 100%)' }}>
-        <div style={{ background: '#fff', padding: '40px', borderRadius: '16px', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', width: '100%', maxWidth: '400px', textAlign: 'center', border: '1px solid var(--border)' }}>
+      <div className="auth-page-container">
+        <div className="auth-card">
           <div style={{ width: '64px', height: '64px', backgroundColor: 'rgba(16, 185, 129, 0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
             <Lock size={32} color="var(--accent)" />
           </div>
           <h1 style={{ fontSize: '1.5rem', marginBottom: '10px', color: 'var(--text-main)', fontWeight: '700' }}>Admin Login</h1>
           <p style={{ color: 'var(--text-muted)', marginBottom: '30px', fontSize: '0.9rem' }}>Please enter the password to access the dashboard.</p>
-          
+
           <form onSubmit={handleAdminLogin}>
             <div style={{ position: 'relative', marginBottom: '15px' }}>
               <User size={20} color="var(--text-muted)" style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)' }} />
@@ -716,7 +734,7 @@ export default function App() {
               />
             </div>
             {loginError && <div style={{ color: 'var(--danger)', fontSize: '0.85rem', marginBottom: '20px' }}>{loginError}</div>}
-            
+
             <button
               type="submit"
               disabled={isLoggingIn || !loginEmail || !loginPassword}
@@ -730,89 +748,79 @@ export default function App() {
     );
   }
 
+  // Determine which pane is active on mobile for admin dashboard
+  const mobilePaneActive = selectedEmail ? 'detail'
+    : (selectedAccount || showCustomerPanel || showSharePanel) ? 'list'
+    : 'sidebar';
+
   return (
     <div className="app-container">
-      <div className="sidebar">
+      {/* ===== SIDEBAR ===== */}
+      <div className={`sidebar ${mobilePaneActive !== 'sidebar' ? 'mobile-hidden' : ''}`}>
         <div className="sidebar-header">
-          <Mail size={24} color="var(--accent)" />
+          <Mail size={22} color="var(--accent)" />
           <span>Hotmail Manager</span>
         </div>
         <div className="sidebar-content">
-          <div style={{ padding: '0 5px 12px 5px', borderBottom: '1px solid var(--border)', marginBottom: '12px' }}>
+          {/* Filter + search */}
+          <div style={{ padding: '0 4px 12px 4px', borderBottom: '1px solid var(--border)', marginBottom: '12px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.5px' }}>
-                Added Hotmails
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.05em' }}>
+                Hotmail Accounts
               </span>
             </div>
 
             {accounts.length > 0 && (
-              <div style={{ display: 'flex', gap: '6px' }}>
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
                 <button
                   onClick={() => setStatusFilter('all')}
                   style={{
-                    flex: 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '5px',
-                    padding: '6px 8px',
-                    borderRadius: '6px',
-                    border: statusFilter === 'all' ? '1px solid var(--accent)' : '1px solid var(--border)',
-                    fontSize: '0.75rem',
-                    fontWeight: '600',
-                    cursor: 'pointer',
+                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
+                    padding: '6px 8px', borderRadius: '6px',
+                    border: statusFilter === 'all' ? '1px solid var(--accent)' : '1px solid var(--border-strong)',
+                    fontSize: '0.73rem', fontWeight: '600', cursor: 'pointer',
                     backgroundColor: statusFilter === 'all' ? 'var(--accent)' : 'var(--bg-dark)',
-                    color: statusFilter === 'all' ? 'white' : 'var(--text-muted)',
-                    transition: 'all 0.2s'
+                    color: statusFilter === 'all' ? 'white' : 'var(--text-muted)', transition: 'all 0.2s'
                   }}
                 >
-                  <CheckCircle2 size={13} />
-                  All ({accounts.length})
+                  <CheckCircle2 size={12} /> All ({accounts.length})
                 </button>
                 <button
                   onClick={() => setStatusFilter('expired')}
                   style={{
-                    flex: 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '5px',
-                    padding: '6px 8px',
-                    borderRadius: '6px',
-                    border: statusFilter === 'expired' ? '1px solid var(--danger)' : '1px solid var(--border)',
-                    fontSize: '0.75rem',
-                    fontWeight: '600',
-                    cursor: 'pointer',
+                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
+                    padding: '6px 8px', borderRadius: '6px',
+                    border: statusFilter === 'expired' ? '1px solid var(--danger)' : '1px solid var(--border-strong)',
+                    fontSize: '0.73rem', fontWeight: '600', cursor: 'pointer',
                     backgroundColor: statusFilter === 'expired' ? 'var(--danger)' : 'var(--bg-dark)',
-                    color: statusFilter === 'expired' ? 'white' : 'var(--text-muted)',
-                    transition: 'all 0.2s'
+                    color: statusFilter === 'expired' ? 'white' : 'var(--text-muted)', transition: 'all 0.2s'
                   }}
                 >
-                  <ShieldAlert size={13} color={statusFilter === 'expired' ? 'white' : 'var(--danger)'} />
+                  <ShieldAlert size={12} color={statusFilter === 'expired' ? 'white' : 'var(--danger)'} />
                   Expired ({expiredCount})
                 </button>
               </div>
             )}
-          </div>
-          <div style={{ padding: '0 5px 15px 5px' }}>
-            <div className="search-box" style={{ padding: '8px 12px', backgroundColor: 'var(--bg-dark)' }}>
-              <Search size={16} color="var(--text-muted)" />
+
+            <div className="search-box" style={{ padding: '8px 12px' }}>
+              <Search size={15} color="var(--text-muted)" />
               <input
                 type="text"
                 placeholder="Search accounts..."
                 value={accountSearchQuery}
                 onChange={(e) => setAccountSearchQuery(e.target.value)}
-                style={{ fontSize: '0.85rem' }}
               />
             </div>
           </div>
+
+          {/* Account list */}
           {accounts.length === 0 && (
-            <div style={{ padding: '10px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              No accounts added.
+            <div style={{ padding: '10px 4px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              No accounts added yet.
             </div>
           )}
           {filteredAccounts.length === 0 && accounts.length > 0 && (
-            <div style={{ padding: '10px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+            <div style={{ padding: '10px 4px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
               No accounts found.
             </div>
           )}
@@ -820,79 +828,124 @@ export default function App() {
             <div
               key={account.email}
               className={`account-item ${selectedAccount === account.email ? 'active' : ''}`}
-              style={{ cursor: 'pointer' }}
-              onClick={() => { handleSelectAccount(account); }}
+              onClick={() => handleSelectAccount(account)}
             >
               <div className="account-info">
-                <User size={18} />
+                <User size={16} style={{ flexShrink: 0 }} />
                 <span className="account-email" title={account.email}>{account.email}</span>
                 {account.status === 'blocked' ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginLeft: 'auto' }} title="Token Expired - Needs Re-login">
-                    <div style={{ width: '8px', height: '8px', backgroundColor: '#ef4444', borderRadius: '50%', boxShadow: '0 0 6px rgba(239, 68, 68, 0.6)' }}></div>
-                    <span style={{ fontSize: '0.7rem', color: '#ef4444', fontWeight: '600' }}>Expired</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }} title="Token Expired">
+                    <div style={{ width: '7px', height: '7px', backgroundColor: '#ef4444', borderRadius: '50%', boxShadow: '0 0 5px rgba(239,68,68,0.6)' }} />
+                    <span style={{ fontSize: '0.68rem', color: '#ef4444', fontWeight: '700' }}>Exp</span>
                   </div>
                 ) : (
-                  <div style={{ width: '8px', height: '8px', backgroundColor: '#10b981', borderRadius: '50%', marginLeft: 'auto', boxShadow: '0 0 6px rgba(16, 185, 129, 0.4)' }} title="Account Active and Healthy"></div>
+                  <div style={{ width: '7px', height: '7px', backgroundColor: '#10b981', borderRadius: '50%', flexShrink: 0, boxShadow: '0 0 5px rgba(16,185,129,0.5)' }} title="Active" />
                 )}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flexShrink: 0 }}>
                 <button
                   onClick={(e) => handleTestSingleAccount(account.email, e)}
                   disabled={testingEmail === account.email}
-                  title="Test token connection with Microsoft"
+                  title="Test Microsoft connection"
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '3px 8px',
-                    borderRadius: '5px',
-                    border: '1px solid rgba(255, 255, 255, 0.15)',
-                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                    color: testingEmail === account.email ? 'var(--text-muted)' : '#38bdf8',
-                    fontSize: '0.72rem',
-                    fontWeight: '600',
+                    display: 'flex', alignItems: 'center', gap: '3px',
+                    padding: '3px 7px', borderRadius: '5px',
+                    border: '1px solid var(--border-strong)',
+                    backgroundColor: 'var(--bg-dark)',
+                    color: testingEmail === account.email ? 'var(--text-muted)' : '#0ea5e9',
+                    fontSize: '0.7rem', fontWeight: '600',
                     cursor: testingEmail === account.email ? 'not-allowed' : 'pointer',
-                    marginRight: '6px',
                     transition: 'all 0.2s'
                   }}
                 >
-                  <RefreshCw size={12} style={{ animation: testingEmail === account.email ? 'spin 1s linear infinite' : 'none' }} />
-                  <span>{testingEmail === account.email ? 'Testing...' : 'Test'}</span>
+                  <RefreshCw size={11} style={{ animation: testingEmail === account.email ? 'spin 1s linear infinite' : 'none' }} />
+                  {testingEmail === account.email ? '...' : 'Test'}
                 </button>
-                <button
-                  className="remove-btn"
-                  onClick={(e) => handleLogout(account.email, e)}
-                  title="Remove account"
-                >
-                  <Trash2 size={16} />
+                <button className="remove-btn" onClick={(e) => handleLogout(account.email, e)} title="Remove">
+                  <Trash2 size={15} />
                 </button>
               </div>
             </div>
           ))}
         </div>
+
+        {/* Desktop sidebar footer — hidden on mobile (replaced by bottom nav) */}
         <div className="sidebar-footer">
-          <button className="add-btn" onClick={() => { setShowCustomerPanel(true); setShowSharePanel(false); setSelectedAccount(null); setSelectedEmail(null); }} style={{ marginBottom: '8px', backgroundColor: 'var(--accent)', color: 'white' }}>
-            <Users size={18} />
-            Manage Customers
+          <button className="add-btn" style={{ backgroundColor: 'var(--accent)', color: 'white' }}
+            onClick={() => { setShowCustomerPanel(true); setShowSharePanel(false); setSelectedAccount(null); setSelectedEmail(null); setCustomerMobileTab('form'); }}>
+            <Users size={16} /> Manage Customers
           </button>
-          <button className="add-btn" onClick={() => { setShowSharePanel(true); setShowCustomerPanel(false); setSelectedAccount(null); setSelectedEmail(null); }} style={{ marginBottom: '8px', backgroundColor: 'var(--accent)', color: 'white' }}>
-            <KeyRound size={18} />
-            Share to Client
+          <button className="add-btn" style={{ backgroundColor: 'var(--accent)', color: 'white' }}
+            onClick={() => { setShowSharePanel(true); setShowCustomerPanel(false); setSelectedAccount(null); setSelectedEmail(null); setShareMobileTab('form'); }}>
+            <KeyRound size={16} /> Share to Client
           </button>
           <button className="add-btn" onClick={handleLogin}>
-            <Plus size={18} />
-            Add New Hotmail
+            <Plus size={16} /> Add New Hotmail
           </button>
         </div>
       </div>
-      <div className="email-list-pane">
+
+      {/* ===== MOBILE BOTTOM NAV ===== */}
+      <nav className="mobile-bottom-nav">
+        <button
+          className={`mobile-nav-btn ${mobilePaneActive === 'sidebar' && !showCustomerPanel && !showSharePanel ? 'active' : ''}`}
+          onClick={() => { setSelectedAccount(null); setSelectedEmail(null); setShowCustomerPanel(false); setShowSharePanel(false); }}
+        >
+          <Mail size={20} />
+          Accounts
+        </button>
+        <button
+          className={`mobile-nav-btn ${showCustomerPanel ? 'active' : ''}`}
+          onClick={() => { setShowCustomerPanel(true); setShowSharePanel(false); setSelectedAccount(null); setSelectedEmail(null); setCustomerMobileTab('form'); }}
+        >
+          <Users size={20} />
+          Customers
+        </button>
+        <button
+          className={`mobile-nav-btn ${showSharePanel ? 'active' : ''}`}
+          onClick={() => { setShowSharePanel(true); setShowCustomerPanel(false); setSelectedAccount(null); setSelectedEmail(null); setShareMobileTab('form'); }}
+        >
+          <KeyRound size={20} />
+          Share
+        </button>
+        <button
+          className="mobile-nav-btn"
+          onClick={handleLogin}
+        >
+          <Plus size={20} />
+          Add
+        </button>
+      </nav>
+
+      {/* ===== EMAIL LIST / PANEL PANE ===== */}
+      <div className={`email-list-pane ${mobilePaneActive !== 'list' ? 'mobile-hidden' : ''}`}>
         {showCustomerPanel ? (
           <>
             <div className="list-header">
-              <h2 style={{ margin: 0 }}>{editingCustomer ? 'Edit Customer Profile' : 'Add Customer Access'}</h2>
+              <button
+                className="mobile-back-btn"
+                onClick={() => { setShowCustomerPanel(false); setEditingCustomer(null); }}
+              >
+                <ArrowLeft size={16} /> Back to Accounts
+              </button>
+              <h2 style={{ margin: 0 }}>{editingCustomer ? 'Edit Customer Profile' : 'Customer Access'}</h2>
             </div>
-            <div style={{ padding: '25px', overflowY: 'auto' }}>
-              <form onSubmit={handleAddCustomer} style={{ backgroundColor: 'var(--bg-dark)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <div className="mobile-tab-bar">
+              <button
+                className={`mobile-tab-btn ${customerMobileTab === 'form' ? 'active' : ''}`}
+                onClick={() => setCustomerMobileTab('form')}
+              >
+                {editingCustomer ? '✏️ Edit Profile' : '➕ Add Profile'}
+              </button>
+              <button
+                className={`mobile-tab-btn ${customerMobileTab === 'list' ? 'active' : ''}`}
+                onClick={() => setCustomerMobileTab('list')}
+              >
+                👥 Active ({customers.length})
+              </button>
+            </div>
+            <div className={`sidebar-content ${customerMobileTab === 'list' ? 'mobile-hidden' : ''}`} style={{ padding: '20px', overflowY: 'auto' }}>
+              <form onSubmit={handleAddCustomer} style={{ backgroundColor: 'var(--bg-panel)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-strong)' }}>
                 <h3 style={{ marginTop: 0, marginBottom: '15px', fontSize: '1rem', color: 'var(--accent)' }}>{editingCustomer ? 'Edit Customer Access' : 'Create New Customer Access'}</h3>
                 <div style={{ marginBottom: '15px' }}>
                   <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Customer Name (Required)</label>
@@ -931,7 +984,7 @@ export default function App() {
                 <div style={{ marginBottom: '20px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                     <label style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 'bold' }}>
-                      Select Assigned Hotmail Accounts ({customerHotmails.length} selected):
+                      Select Hotmails ({customerHotmails.length}):
                     </label>
                     {customerHotmails.length > 0 && (
                       <button
@@ -947,13 +1000,13 @@ export default function App() {
                     <input
                       type="text"
                       className="search-box"
-                      placeholder="🔍 Search among 116+ Hotmail accounts..."
+                      placeholder="🔍 Search Hotmail accounts..."
                       value={customerAccountSearch}
                       onChange={(e) => setCustomerAccountSearch(e.target.value)}
                       style={{ width: '100%', padding: '8px 12px', fontSize: '0.85rem' }}
                     />
                   </div>
-                  <div style={{ maxHeight: '380px', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px', backgroundColor: 'var(--bg-main)' }}>
+                  <div style={{ maxHeight: '280px', overflowY: 'auto', border: '1px solid var(--border-strong)', borderRadius: '8px', padding: '10px', backgroundColor: 'var(--bg-dark)' }}>
                     {accounts.length === 0 ? (
                       <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>No Hotmail accounts available. Add accounts first.</div>
                     ) : (
@@ -966,26 +1019,26 @@ export default function App() {
                               checked={customerHotmails.includes(acc.email)}
                               onChange={() => toggleCustomerHotmailSelection(acc.email)}
                             />
-                            <span>{acc.email}</span>
+                            <span style={{ wordBreak: 'break-all' }}>{acc.email}</span>
                           </label>
                         ))
                     )}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                   <button
                     type="submit"
                     className="add-btn"
                     disabled={isAddingCustomer || !customerName || !customerOtp || customerHotmails.length === 0}
                     style={{ flex: 1, backgroundColor: 'var(--accent)', color: 'white', padding: '12px', borderRadius: '8px', fontWeight: '600' }}
                   >
-                    {isAddingCustomer ? (editingCustomer ? 'Updating...' : 'Creating...') : (editingCustomer ? 'Update Customer Access' : 'Create Customer Access')}
+                    {isAddingCustomer ? (editingCustomer ? 'Updating...' : 'Creating...') : (editingCustomer ? 'Update Access' : 'Create Access')}
                   </button>
                   {editingCustomer && (
                     <button
                       type="button"
                       onClick={cancelEditCustomer}
-                      style={{ backgroundColor: 'var(--bg-main)', color: 'var(--text-muted)', border: '1px solid var(--border)', padding: '12px 16px', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}
+                      style={{ backgroundColor: 'var(--bg-dark)', color: 'var(--text-muted)', border: '1px solid var(--border-strong)', padding: '12px 16px', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}
                     >
                       Cancel
                     </button>
@@ -997,13 +1050,33 @@ export default function App() {
         ) : showSharePanel ? (
           <>
             <div className="list-header">
+              <button
+                className="mobile-back-btn"
+                onClick={() => setShowSharePanel(false)}
+              >
+                <ArrowLeft size={16} /> Back to Accounts
+              </button>
               <h2 style={{ margin: 0 }}>Share to Client</h2>
             </div>
-            <div style={{ padding: '30px' }}>
+            <div className="mobile-tab-bar">
+              <button
+                className={`mobile-tab-btn ${shareMobileTab === 'form' ? 'active' : ''}`}
+                onClick={() => setShareMobileTab('form')}
+              >
+                ⚡ Create OTP
+              </button>
+              <button
+                className={`mobile-tab-btn ${shareMobileTab === 'list' ? 'active' : ''}`}
+                onClick={() => setShareMobileTab('list')}
+              >
+                🔑 Active OTPs ({shares.length})
+              </button>
+            </div>
+            <div className={`sidebar-content ${shareMobileTab === 'list' ? 'mobile-hidden' : ''}`} style={{ padding: '24px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <form onSubmit={handleAddShare}>
                   <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)' }}>Subject Filter</label>
+                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Subject Filter</label>
                     <input
                       type="text"
                       className="search-box"
@@ -1015,7 +1088,7 @@ export default function App() {
                     />
                   </div>
                   <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)' }}>OTP Code (Required)</label>
+                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>OTP Code (Required)</label>
                     <input
                       type="text"
                       className="search-box"
@@ -1026,11 +1099,11 @@ export default function App() {
                       required
                     />
                   </div>
-                   <button
+                  <button
                     type="submit"
                     className="add-btn"
                     disabled={isAddingShare || !shareSubject || !customOtp}
-                    style={{ width: '100%', display: 'flex', justifyContent: 'center', backgroundColor: (isAddingShare || !shareSubject || !customOtp) ? 'var(--border)' : 'var(--accent)', color: (isAddingShare || !shareSubject || !customOtp) ? 'var(--text-muted)' : 'white' }}
+                    style={{ width: '100%', display: 'flex', justifyContent: 'center', backgroundColor: (isAddingShare || !shareSubject || !customOtp) ? 'var(--border-strong)' : 'var(--accent)', color: (isAddingShare || !shareSubject || !customOtp) ? 'var(--text-muted)' : 'white' }}
                   >
                     {isAddingShare ? 'Creating...' : 'Create Share OTP'}
                   </button>
@@ -1038,9 +1111,9 @@ export default function App() {
               </div>
               <button
                 onClick={() => setShowSharePanel(false)}
-                style={{ marginTop: '30px', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                style={{ marginTop: '24px', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}
               >
-                <ArrowLeft size={18} /> Back to Accounts
+                <ArrowLeft size={16} /> Back to Accounts
               </button>
             </div>
           </>
@@ -1050,20 +1123,21 @@ export default function App() {
               <h2>Select Account</h2>
             </div>
             <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-              Select a Hotmail account from the left sidebar to view its inbox.
+              Select a Hotmail account from the sidebar to view its inbox.
             </div>
           </>
         ) : (
           <>
             <div className="list-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
                 <button
                   onClick={() => setSelectedAccount(null)}
-                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px' }}
+                  title="Back to account list"
                 >
                   <ArrowLeft size={18} />
                 </button>
-                <h2 style={{ margin: 0, fontSize: '1rem' }}>
+                <h2 style={{ margin: 0, fontSize: '0.95rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {accounts.find(a => a.email === selectedAccount)?.email}
                 </h2>
               </div>
@@ -1079,7 +1153,7 @@ export default function App() {
             </div>
             <div className="emails-container">
               {error && (
-                <div style={{ padding: '20px', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--danger)', margin: '10px', borderRadius: '8px', fontSize: '0.9rem' }}>
+                <div style={{ padding: '16px', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--danger)', margin: '10px', borderRadius: '8px', fontSize: '0.85rem' }}>
                   {error}
                 </div>
               )}
@@ -1109,62 +1183,68 @@ export default function App() {
           </>
         )}
       </div>
-      <div className="email-detail-pane">
+
+      <div className={`email-detail-pane ${mobilePaneActive !== 'detail' ? 'mobile-hidden' : ''}`}>
         {showCustomerPanel ? (
-          <div style={{ padding: '30px', height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '15px', borderBottom: '1px solid var(--border)', paddingBottom: '20px', marginBottom: '20px', flexShrink: 0 }}>
-              <Users size={24} color="var(--accent)" />
-              <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Active Customer Profiles ({customers.length})</h2>
+          <div style={{ padding: '24px', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', borderBottom: '1px solid var(--border-strong)', paddingBottom: '16px', marginBottom: '16px', flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Users size={22} color="var(--accent)" />
+                <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Active Customer Profiles ({customers.length})</h2>
+              </div>
+              <button
+                className="mobile-back-btn"
+                onClick={() => setCustomerMobileTab('form')}
+                style={{ margin: 0 }}
+              >
+                + Add Profile
+              </button>
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', paddingRight: '10px' }}>
+            <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
               {customers.length > 0 ? (
                 <div className="emails-container" style={{ padding: 0 }}>
                   {customers.map((cust) => (
                     <div
                       key={cust._id}
                       className="email-item"
-                      style={{ marginBottom: '15px', border: '1px solid var(--border)', borderRadius: '12px', padding: '15px', cursor: 'default', background: 'var(--bg-main)', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}
+                      style={{ marginBottom: '12px', border: '1px solid var(--border-strong)', borderRadius: '12px', padding: '14px', cursor: 'default', background: 'var(--bg-panel)', boxShadow: '0 2px 4px rgba(0,0,0,0.03)' }}
                     >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div style={{ display: 'flex', gap: '15px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                        <div style={{ display: 'flex', gap: '12px', flex: 1, overflow: 'hidden' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', borderRadius: '50%', backgroundColor: 'rgba(16, 185, 129, 0.1)', flexShrink: 0 }}>
                             <User size={18} color="#10b981" />
                           </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: '1rem', color: 'var(--text-main)', fontWeight: '700' }}>{cust.name}</span>
-                              <span style={{ fontSize: '0.85rem', color: 'white', backgroundColor: 'var(--accent)', padding: '2px 8px', borderRadius: '6px', fontWeight: 'bold', letterSpacing: '1px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1, overflow: 'hidden' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '0.95rem', color: 'var(--text-main)', fontWeight: '700' }}>{cust.name}</span>
+                              <span style={{ fontSize: '0.8rem', color: 'white', backgroundColor: 'var(--accent)', padding: '2px 8px', borderRadius: '6px', fontWeight: 'bold', letterSpacing: '1px' }}>
                                 OTP: {cust.otp}
                               </span>
                             </div>
-                            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                               Assigned Hotmails ({cust.hotmailEmails ? cust.hotmailEmails.length : 0}):
                             </div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                               {cust.hotmailEmails && cust.hotmailEmails.map(e => (
-                                <span key={e} style={{ backgroundColor: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '3px 8px', borderRadius: '6px', fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: '500' }}>{e}</span>
+                                <span key={e} style={{ backgroundColor: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem', color: 'var(--text-main)', fontWeight: '500', wordBreak: 'break-all' }}>{e}</span>
                               ))}
                             </div>
                           </div>
                         </div>
                         <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                           <button
-                            onClick={() => handleEditCustomer(cust)}
-                            style={{ padding: '6px 10px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--accent)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '500', fontSize: '0.75rem', transition: 'all 0.2s' }}
-                            onMouseOver={(e) => { e.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.2)'; }}
-                            onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.1)'; }}
+                            onClick={() => { handleEditCustomer(cust); setCustomerMobileTab('form'); }}
+                            style={{ padding: '5px 8px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--accent)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: '500', fontSize: '0.72rem', transition: 'all 0.2s' }}
                             title="Edit customer details"
                           >
-                            <Pencil size={14} /> Edit
+                            <Pencil size={13} /> Edit
                           </button>
                           <button
                             onClick={() => handleDeleteCustomer(cust._id)}
-                            style={{ padding: '6px 10px', backgroundColor: 'var(--bg-dark)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '500', fontSize: '0.75rem', transition: 'all 0.2s' }}
-                            onMouseOver={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; }}
-                            onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-dark)'; }}
+                            style={{ padding: '5px 8px', backgroundColor: 'var(--bg-dark)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: '500', fontSize: '0.72rem', transition: 'all 0.2s' }}
                             title="Delete customer profile"
                           >
-                            <Trash2 size={14} /> Remove
+                            <Trash2 size={13} /> Remove
                           </button>
                         </div>
                       </div>
@@ -1172,64 +1252,72 @@ export default function App() {
                   ))}
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '16px', opacity: 0.35 }}>
-                  <Users size={56} color="var(--accent)" />
-                  <p style={{ margin: 0, fontSize: '0.95rem' }}>No customer profiles created yet.</p>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '16px', opacity: 0.35, minHeight: '200px' }}>
+                  <Users size={48} color="var(--accent)" />
+                  <p style={{ margin: 0, fontSize: '0.9rem' }}>No customer profiles created yet.</p>
                 </div>
               )}
             </div>
           </div>
         ) : showSharePanel ? (
-          <div style={{ padding: '30px', height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '15px', borderBottom: '1px solid var(--border)', paddingBottom: '20px', marginBottom: '20px', flexShrink: 0 }}>
-              <KeyRound size={24} color="var(--accent)" />
-              <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Active Customer Shares (OTP)</h2>
+          <div style={{ padding: '24px', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', borderBottom: '1px solid var(--border-strong)', paddingBottom: '16px', marginBottom: '16px', flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <KeyRound size={22} color="var(--accent)" />
+                <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Active Customer Shares (OTP)</h2>
+              </div>
+              <button
+                className="mobile-back-btn"
+                onClick={() => setShareMobileTab('form')}
+                style={{ margin: 0 }}
+              >
+                + Create OTP
+              </button>
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', paddingRight: '10px' }}>
+            <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
               {shares.length > 0 ? (
                 <div>
-                  <h3 style={{ fontSize: '1rem', marginBottom: '15px', color: 'var(--text-muted)' }}>Active OTP Access Codes:</h3>
+                  <h3 style={{ fontSize: '0.9rem', marginBottom: '12px', color: 'var(--text-muted)' }}>Active OTP Access Codes:</h3>
                   <div className="emails-container" style={{ padding: 0 }}>
                     {shares.map((share) => (
                       <div
                         key={share._id}
                         className="email-item"
-                        style={{ marginBottom: '15px', border: '1px solid var(--border)', borderRadius: '12px', padding: '15px', cursor: 'default', background: 'var(--bg-main)', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}
+                        style={{ marginBottom: '12px', border: '1px solid var(--border-strong)', borderRadius: '12px', padding: '14px', cursor: 'default', background: 'var(--bg-panel)', boxShadow: '0 2px 4px rgba(0,0,0,0.03)' }}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                          <div style={{ display: 'flex', gap: '15px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                          <div style={{ display: 'flex', gap: '12px', flex: 1, overflow: 'hidden' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', borderRadius: '50%', backgroundColor: 'rgba(16, 185, 129, 0.1)', flexShrink: 0 }}>
                               <KeyRound size={16} color="#10b981" />
                             </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                                 <span style={{ fontSize: '0.95rem', color: 'var(--text-main)', fontWeight: '600' }}>Active OTP Session</span>
-                                 <span style={{ fontSize: '1rem', color: 'white', backgroundColor: 'var(--accent)', padding: '2px 8px', borderRadius: '6px', fontWeight: 'bold', letterSpacing: '1px' }}>
-                                   {share.otp}
-                                 </span>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, overflow: 'hidden' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '0.9rem', color: 'var(--text-main)', fontWeight: '600' }}>Active OTP Session</span>
+                                <span style={{ fontSize: '0.95rem', color: 'white', backgroundColor: 'var(--accent)', padding: '2px 8px', borderRadius: '6px', fontWeight: 'bold', letterSpacing: '1px' }}>
+                                  {share.otp}
+                                </span>
                               </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', fontSize: '0.9rem' }}>
-                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                   <span style={{ color: 'var(--text-muted)' }}>Filter:</span>
-                                   <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '2px 8px', borderRadius: '6px', fontWeight: '600', color: '#10b981' }}>"{share.subjectQuery}"</span>
-                                 </div>
-                                 <span style={{ color: 'var(--border)' }}>•</span>
-                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                   <span style={{ color: 'var(--text-muted)' }}>Created:</span>
-                                   <span style={{ color: 'var(--text-main)', fontSize: '0.85rem' }}>
-                                     {new Date(share.createdAt).toLocaleDateString()} {new Date(share.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                   </span>
-                                 </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '0.82rem' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <span style={{ color: 'var(--text-muted)' }}>Filter:</span>
+                                  <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '2px 6px', borderRadius: '4px', fontWeight: '600', color: '#10b981' }}>"{share.subjectQuery}"</span>
+                                </div>
+                                <span style={{ color: 'var(--border-strong)' }}>•</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <span style={{ color: 'var(--text-muted)' }}>Created:</span>
+                                  <span style={{ color: 'var(--text-main)', fontSize: '0.8rem' }}>
+                                    {new Date(share.createdAt).toLocaleDateString()} {new Date(share.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
                               </div>
                             </div>
                           </div>
                           <button
                             onClick={() => handleDeleteShare(share._id)}
-                            style={{ padding: '6px 10px', backgroundColor: 'var(--bg-dark)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '500', fontSize: '0.75rem', transition: 'all 0.2s', flexShrink: 0 }}
-                            onMouseOver={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; }}
-                            onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-dark)'; }}
+                            style={{ padding: '5px 8px', backgroundColor: 'var(--bg-dark)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: '500', fontSize: '0.72rem', transition: 'all 0.2s', flexShrink: 0 }}
+                            title="Delete customer share"
                           >
-                            <Trash2 size={14} /> Stop
+                            <Trash2 size={13} /> Stop
                           </button>
                         </div>
                       </div>
@@ -1237,8 +1325,9 @@ export default function App() {
                   </div>
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '16px', opacity: 0.35 }}>
-                  <KeyRound size={56} color="var(--accent)" />
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '16px', opacity: 0.35, minHeight: '200px' }}>
+                  <KeyRound size={48} color="var(--accent)" />
+                  <p style={{ margin: 0, fontSize: '0.9rem' }}>No active shares created yet.</p>
                 </div>
               )}
             </div>
@@ -1246,6 +1335,12 @@ export default function App() {
         ) : selectedEmail ? (
           <>
             <div className="detail-header">
+              <button
+                className="mobile-back-btn"
+                onClick={() => setSelectedEmail(null)}
+              >
+                <ArrowLeft size={16} /> Back to Messages
+              </button>
               <div className="detail-subject">{selectedEmail.subject}</div>
               <div className="detail-meta">
                 <div className="avatar">
