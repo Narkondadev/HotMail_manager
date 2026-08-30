@@ -308,33 +308,13 @@ app.post('/api/accounts/verify-one', authenticateAdmin, async (req, res) => {
         return res.status(400).json({ error: 'Email parameter required' });
     }
     try {
-        await warmUpCache();
         const accountDoc = await Account.findOne({ email: email.trim().toLowerCase() });
         if (!accountDoc) {
             return res.status(404).json({ error: 'Account not found' });
         }
 
-        let accessToken = null;
+        const accessToken = await getAccessTokenForAccount(accountDoc);
         let tokenValid = false;
-        const scopes = ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"];
-
-        try {
-            const msalAccount = await getMsalAccount(accountDoc.homeAccountId, accountDoc.email);
-            if (msalAccount) {
-                const tokenResponse = await cca.acquireTokenSilent({
-                    account: msalAccount,
-                    scopes: scopes,
-                });
-                if (tokenResponse && tokenResponse.accessToken) {
-                    accessToken = tokenResponse.accessToken;
-                }
-            }
-            if (!accessToken && accountDoc.accessToken && accountDoc.accessToken !== 'managed-by-msal-cache' && accountDoc.accessToken.includes('.')) {
-                accessToken = accountDoc.accessToken;
-            }
-        } catch (err) {
-            console.warn(`Silent token acquisition failed for ${accountDoc.email}:`, err.message);
-        }
 
         if (accessToken) {
             try {
@@ -350,7 +330,6 @@ app.post('/api/accounts/verify-one', authenticateAdmin, async (req, res) => {
         const newStatus = tokenValid ? 'active' : 'blocked';
         accountDoc.status = newStatus;
         await accountDoc.save().catch(() => { });
-        await saveMsalCache();
 
         res.json({ success: true, email: accountDoc.email, status: accountDoc.status });
     } catch (error) {
@@ -477,14 +456,10 @@ app.post('/api/forward/search', authenticateAdmin, async (req, res) => {
 
         const searchPromises = accounts.map(async (accountDoc) => {
             try {
-                const msalAccount = await cca.getTokenCache().getAccountByHomeId(accountDoc.homeAccountId);
-                if (!msalAccount) return [];
-                const tokenResponse = await cca.acquireTokenSilent({
-                    account: msalAccount,
-                    scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
-                });
+                const accessToken = await getAccessTokenForAccount(accountDoc);
+                if (!accessToken) return [];
                 const searchResponse = await fetch(`https://graph.microsoft.com/v1.0/me/messages?$search="${encodeURIComponent(searchQuery)}"&$select=id,subject,body,bodyPreview,sender,receivedDateTime`, {
-                    headers: { 'Authorization': `Bearer ${tokenResponse.accessToken}`, 'ConsistencyLevel': 'eventual' }
+                    headers: { 'Authorization': `Bearer ${accessToken}`, 'ConsistencyLevel': 'eventual' }
                 });
                 if (!searchResponse.ok) return [];
                 const searchData = await searchResponse.json();
@@ -860,25 +835,7 @@ app.get('/api/shares/emails', async (req, res) => {
         const accountDoc = await Account.findOne({ email: hotmailEmail.trim().toLowerCase() });
         if (!accountDoc) return res.status(404).json({ error: 'Hotmail account not registered' });
 
-        await warmUpCache();
-        let accessToken = null;
-        try {
-            const msalAccount = await getMsalAccount(accountDoc.homeAccountId, accountDoc.email);
-            if (msalAccount) {
-                const tokenResponse = await cca.acquireTokenSilent({
-                    account: msalAccount,
-                    scopes: ["User.Read", "Mail.Read", "Mail.Send", "MailboxSettings.ReadWrite", "offline_access"],
-                });
-                accessToken = tokenResponse.accessToken;
-                await saveMsalCache();
-            }
-        } catch (err) {
-            console.error('Silent token acquisition failed for share emails, trying fallback:', err.message);
-        }
-
-        if (!accessToken && accountDoc.accessToken && accountDoc.accessToken !== 'managed-by-msal-cache' && accountDoc.accessToken.includes('.')) {
-            accessToken = accountDoc.accessToken;
-        }
+        const accessToken = await getAccessTokenForAccount(accountDoc);
 
         if (!accessToken) {
             // Auto-flag this account as blocked so admin sees red dot immediately
