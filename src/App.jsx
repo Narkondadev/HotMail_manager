@@ -749,9 +749,14 @@ export default function App() {
   }
 
   // Determine which pane is active on mobile for admin dashboard
-  const mobilePaneActive = selectedEmail ? 'detail'
-    : (selectedAccount || showCustomerPanel || showSharePanel) ? 'list'
-    : 'sidebar';
+  // Detail pane shows: selected email, OR customer list tab, OR share list tab
+  const mobilePaneActive =
+    selectedEmail ||
+    (showCustomerPanel && customerMobileTab === 'list') ||
+    (showSharePanel && shareMobileTab === 'list')
+      ? 'detail'
+      : (selectedAccount || showCustomerPanel || showSharePanel) ? 'list'
+      : 'sidebar';
 
   return (
     <div className="app-container">
@@ -935,13 +940,18 @@ export default function App() {
                 className={`mobile-tab-btn ${customerMobileTab === 'form' ? 'active' : ''}`}
                 onClick={() => setCustomerMobileTab('form')}
               >
-                {editingCustomer ? '✏️ Edit Profile' : '➕ Add Profile'}
+                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+                  {editingCustomer ? <Pencil size={13} /> : <Plus size={13} />}
+                  {editingCustomer ? 'Edit Profile' : 'Add Profile'}
+                </span>
               </button>
               <button
                 className={`mobile-tab-btn ${customerMobileTab === 'list' ? 'active' : ''}`}
                 onClick={() => setCustomerMobileTab('list')}
               >
-                👥 Active ({customers.length})
+                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+                  <Users size={13} /> Active ({customers.length})
+                </span>
               </button>
             </div>
             <div className={`sidebar-content ${customerMobileTab === 'list' ? 'mobile-hidden' : ''}`} style={{ padding: '20px', overflowY: 'auto' }}>
@@ -967,7 +977,7 @@ export default function App() {
                       onClick={() => setCustomerOtp(Math.floor(100000 + Math.random() * 900000).toString())}
                       style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
                     >
-                      ⚡ Auto-Generate OTP
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><RefreshCw size={12} /> Auto-Generate</span>
                     </button>
                   </div>
                   <input
@@ -1063,13 +1073,17 @@ export default function App() {
                 className={`mobile-tab-btn ${shareMobileTab === 'form' ? 'active' : ''}`}
                 onClick={() => setShareMobileTab('form')}
               >
-                ⚡ Create OTP
+                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+                  <Plus size={13} /> Create OTP
+                </span>
               </button>
               <button
                 className={`mobile-tab-btn ${shareMobileTab === 'list' ? 'active' : ''}`}
                 onClick={() => setShareMobileTab('list')}
               >
-                🔑 Active OTPs ({shares.length})
+                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+                  <KeyRound size={13} /> Active ({shares.length})
+                </span>
               </button>
             </div>
             <div className={`sidebar-content ${shareMobileTab === 'list' ? 'mobile-hidden' : ''}`} style={{ padding: '24px' }}>
@@ -1195,9 +1209,9 @@ export default function App() {
               <button
                 className="mobile-back-btn"
                 onClick={() => setCustomerMobileTab('form')}
-                style={{ margin: 0 }}
+                style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '5px' }}
               >
-                + Add Profile
+                <Plus size={13} /> Add Profile
               </button>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
@@ -1269,9 +1283,9 @@ export default function App() {
               <button
                 className="mobile-back-btn"
                 onClick={() => setShareMobileTab('form')}
-                style={{ margin: 0 }}
+                style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '5px' }}
               >
-                + Create OTP
+                <Plus size={13} /> Create OTP
               </button>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
