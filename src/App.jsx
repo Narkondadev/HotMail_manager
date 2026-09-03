@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Mail, Search, Plus, Trash2, User, LogOut, ArrowLeft, Send, AlertCircle, CheckCircle2, Clock, Lock, KeyRound, RefreshCw, ShieldAlert, Users, Pencil } from 'lucide-react';
 import './index.css';
 
@@ -31,67 +31,83 @@ function EmailSkeleton() {
 }
 
 function EmailBody({ htmlContent }) {
+  const iframeRef = useRef(null);
+
+  const resizeIframe = useCallback(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+    try {
+      const doc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (doc && doc.body) {
+        // Reset height first so shrinking content is measured correctly
+        iframe.style.height = '0px';
+        const h = doc.documentElement.scrollHeight || doc.body.scrollHeight;
+        iframe.style.height = Math.max(h, 200) + 'px';
+      }
+    } catch (e) {
+      // cross-origin guard
+    }
+  }, []);
+
   if (!htmlContent) {
     return <div className="detail-body empty-text">No content</div>;
   }
 
-  const fullHtml = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <base target="_blank">
-        <style>
-          * {
-            box-sizing: border-box;
-          }
-          body {
-            margin: 0;
-            padding: 24px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            font-size: 15px;
-            line-height: 1.6;
-            color: #1f2937;
-            background-color: #ffffff;
-            word-wrap: break-word;
-          }
-          img {
-            max-width: 100%;
-            height: auto;
-            display: block;
-          }
-          a {
-            color: #0066cc !important;
-            text-decoration: underline !important;
-          }
-          a:visited {
-            color: #551a8b !important;
-          }
-          table {
-            border-collapse: collapse;
-            max-width: 100% !important;
-            width: auto !important;
-          }
-          td, th {
-            max-width: 100%;
-            word-break: break-word;
-            overflow-wrap: break-word;
-          }
-        </style>
-      </head>
-      <body>
-        ${htmlContent}
-      </body>
-    </html>
-  `;
+  const fullHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base target="_blank">
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #ffffff;
+    }
+    body {
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      color: #1f2937;
+      /* Let wide email tables scroll horizontally instead of reflowing */
+      overflow-x: auto;
+      overflow-y: visible;
+      width: 100%;
+    }
+    img {
+      max-width: 100%;
+      height: auto;
+    }
+    /* Ensure links are always visible */
+    a, a:link {
+      color: #0066cc !important;
+      text-decoration: underline !important;
+    }
+    a:visited {
+      color: #551a8b !important;
+    }
+    /* Do NOT override table widths — HTML emails rely on fixed-width
+       table layouts (e.g. width="600"). Overriding breaks cell proportions
+       and causes text/digits to wrap unexpectedly. */
+  </style>
+</head>
+<body>
+  ${htmlContent}
+</body>
+</html>`;
 
   return (
     <iframe
+      ref={iframeRef}
       title="Email Content"
       srcDoc={fullHtml}
       className="email-iframe"
       sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts"
+      scrolling="no"
+      onLoad={resizeIframe}
     />
   );
 }
