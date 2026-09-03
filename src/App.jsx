@@ -30,6 +30,72 @@ function EmailSkeleton() {
   );
 }
 
+function EmailBody({ htmlContent }) {
+  if (!htmlContent) {
+    return <div className="detail-body empty-text">No content</div>;
+  }
+
+  const fullHtml = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <base target="_blank">
+        <style>
+          * {
+            box-sizing: border-box;
+          }
+          body {
+            margin: 0;
+            padding: 24px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            font-size: 15px;
+            line-height: 1.6;
+            color: #1f2937;
+            background-color: #ffffff;
+            word-wrap: break-word;
+          }
+          img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+          }
+          a {
+            color: #0066cc !important;
+            text-decoration: underline !important;
+          }
+          a:visited {
+            color: #551a8b !important;
+          }
+          table {
+            border-collapse: collapse;
+            max-width: 100% !important;
+            width: auto !important;
+          }
+          td, th {
+            max-width: 100%;
+            word-break: break-word;
+            overflow-wrap: break-word;
+          }
+        </style>
+      </head>
+      <body>
+        ${htmlContent}
+      </body>
+    </html>
+  `;
+
+  return (
+    <iframe
+      title="Email Content"
+      srcDoc={fullHtml}
+      className="email-iframe"
+      sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts"
+    />
+  );
+}
+
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(localStorage.getItem('isLoggedIn') === 'true');
   const [loginEmail, setLoginEmail] = useState('');
@@ -673,7 +739,7 @@ export default function App() {
                   </div>
                 </div>
               </div>
-              <div className="detail-body" dangerouslySetInnerHTML={{ __html: selectedClientEmail.body }} />
+              <EmailBody htmlContent={selectedClientEmail.body} />
             </>
           ) : (
             <div className="empty-state">
@@ -1368,10 +1434,7 @@ export default function App() {
                 </div>
               </div>
             </div>
-            <div
-              className="detail-body"
-              dangerouslySetInnerHTML={{ __html: selectedEmail.body }}
-            />
+            <EmailBody htmlContent={selectedEmail.body} />
           </>
         ) : (
           <div className="empty-state">
