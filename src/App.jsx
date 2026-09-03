@@ -32,20 +32,41 @@ function EmailSkeleton() {
 
 function EmailBody({ htmlContent }) {
   const iframeRef = useRef(null);
+  const containerRef = useRef(null);
 
   const resizeIframe = useCallback(() => {
     const iframe = iframeRef.current;
-    if (!iframe) return;
+    const container = containerRef.current;
+    if (!iframe || !container) return;
+
     try {
       const doc = iframe.contentDocument || iframe.contentWindow?.document;
-      if (doc && doc.body) {
-        // Reset height first so shrinking content is measured correctly
-        iframe.style.height = '0px';
-        const h = doc.documentElement.scrollHeight || doc.body.scrollHeight;
-        iframe.style.height = Math.max(h, 200) + 'px';
+      if (!doc || !doc.documentElement) return;
+
+      const html = doc.documentElement;
+
+      // Step 1: Reset zoom so we measure the TRUE natural width of the email
+      html.style.zoom = '1';
+
+      // Step 2: Compare natural email width vs available container width
+      const naturalWidth = html.scrollWidth;
+      const available = container.offsetWidth || container.clientWidth;
+
+      // Step 3: Scale down proportionally if email is wider than the container.
+      // This is how real email clients (Gmail, Outlook) handle fixed-width HTML emails.
+      let scale = 1;
+      if (naturalWidth > 0 && available > 0 && naturalWidth > available) {
+        scale = available / naturalWidth;
+        html.style.zoom = String(scale);
       }
+
+      // Step 4: Measure the height AFTER zoom is applied, set iframe to that height.
+      // We reset height first so the browser re-computes scrollHeight correctly.
+      iframe.style.height = '0px';
+      const scaledHeight = Math.ceil(html.scrollHeight * scale);
+      iframe.style.height = Math.max(scaledHeight, 200) + 'px';
     } catch (e) {
-      // cross-origin guard
+      // cross-origin guard — won't trigger with srcdoc
     }
   }, []);
 
@@ -61,54 +82,36 @@ function EmailBody({ htmlContent }) {
   <base target="_blank">
   <style>
     * { box-sizing: border-box; }
-    html, body {
-      margin: 0;
-      padding: 0;
-      background: #ffffff;
-    }
+    html { transform-origin: top left; }
     body {
+      margin: 0;
       padding: 16px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       font-size: 15px;
       line-height: 1.6;
       color: #1f2937;
-      /* Let wide email tables scroll horizontally instead of reflowing */
-      overflow-x: auto;
-      overflow-y: visible;
-      width: 100%;
+      background: #ffffff;
     }
-    img {
-      max-width: 100%;
-      height: auto;
-    }
-    /* Ensure links are always visible */
-    a, a:link {
-      color: #0066cc !important;
-      text-decoration: underline !important;
-    }
-    a:visited {
-      color: #551a8b !important;
-    }
-    /* Do NOT override table widths — HTML emails rely on fixed-width
-       table layouts (e.g. width="600"). Overriding breaks cell proportions
-       and causes text/digits to wrap unexpectedly. */
+    img { max-width: 100%; height: auto; }
+    a, a:link  { color: #0066cc !important; text-decoration: underline !important; }
+    a:visited  { color: #551a8b !important; }
   </style>
 </head>
-<body>
-  ${htmlContent}
-</body>
+<body>${htmlContent}</body>
 </html>`;
 
   return (
-    <iframe
-      ref={iframeRef}
-      title="Email Content"
-      srcDoc={fullHtml}
-      className="email-iframe"
-      sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts"
-      scrolling="no"
-      onLoad={resizeIframe}
-    />
+    <div ref={containerRef} style={{ width: '100%', flex: 1 }}>
+      <iframe
+        ref={iframeRef}
+        title="Email Content"
+        srcDoc={fullHtml}
+        style={{ width: '100%', border: 'none', display: 'block', overflow: 'hidden' }}
+        sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts"
+        scrolling="no"
+        onLoad={resizeIframe}
+      />
+    </div>
   );
 }
 
