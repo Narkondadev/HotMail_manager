@@ -1092,7 +1092,7 @@ export default function App() {
                     )}
                   </div>
                   <textarea
-                    placeholder={`Paste hotmail emails, one per line:\n\nexample1@hotmail.com\nexample2@hotmail.com\nexample3@hotmail.com`}
+                    placeholder={`example1@hotmail.com\nexample2@hotmail.com\nexample3@hotmail.com`}
                     value={customerHotmailsText}
                     onChange={(e) => setCustomerHotmailsText(e.target.value)}
                     rows={8}
