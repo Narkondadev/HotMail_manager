@@ -146,8 +146,11 @@ export default function App() {
   const [showCustomerPanel, setShowCustomerPanel] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [customerOtp, setCustomerOtp] = useState('');
-  const [customerHotmails, setCustomerHotmails] = useState([]);
-  const [customerAccountSearch, setCustomerAccountSearch] = useState('');
+  const [customerHotmailsText, setCustomerHotmailsText] = useState('');
+  const customerHotmails = customerHotmailsText
+    .split('\n')
+    .map(e => e.trim())
+    .filter(e => e.length > 0);
   const [customers, setCustomers] = useState([]);
   const [isAddingCustomer, setIsAddingCustomer] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
@@ -331,7 +334,7 @@ export default function App() {
     setEditingCustomer(cust);
     setCustomerName(cust.name);
     setCustomerOtp(cust.otp);
-    setCustomerHotmails(cust.hotmailEmails || []);
+    setCustomerHotmailsText((cust.hotmailEmails || []).join('\n'));
     setShowCustomerPanel(true);
     setShowSharePanel(false);
   };
@@ -340,7 +343,7 @@ export default function App() {
     setEditingCustomer(null);
     setCustomerName('');
     setCustomerOtp('');
-    setCustomerHotmails([]);
+    setCustomerHotmailsText('');
   };
 
   const handleAddCustomer = async (e) => {
@@ -1076,46 +1079,43 @@ export default function App() {
                 <div style={{ marginBottom: '20px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                     <label style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 'bold' }}>
-                      Select Hotmails ({customerHotmails.length}):
+                      Paste Hotmails ({customerHotmails.length} added):
                     </label>
-                    {customerHotmails.length > 0 && (
+                    {customerHotmailsText.length > 0 && (
                       <button
                         type="button"
-                        onClick={() => setCustomerHotmails([])}
+                        onClick={() => setCustomerHotmailsText('')}
                         style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
                       >
-                        Clear Selection
+                        Clear
                       </button>
                     )}
                   </div>
-                  <div style={{ marginBottom: '10px' }}>
-                    <input
-                      type="text"
-                      className="search-box"
-                      placeholder="🔍 Search Hotmail accounts..."
-                      value={customerAccountSearch}
-                      onChange={(e) => setCustomerAccountSearch(e.target.value)}
-                      style={{ width: '100%', padding: '8px 12px', fontSize: '0.85rem' }}
-                    />
-                  </div>
-                  <div style={{ maxHeight: '280px', overflowY: 'auto', border: '1px solid var(--border-strong)', borderRadius: '8px', padding: '10px', backgroundColor: 'var(--bg-dark)' }}>
-                    {accounts.length === 0 ? (
-                      <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>No Hotmail accounts available. Add accounts first.</div>
-                    ) : (
-                      accounts
-                        .filter(acc => acc.email.toLowerCase().includes(customerAccountSearch.toLowerCase()))
-                        .map(acc => (
-                          <label key={acc.email} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 0', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-main)', borderBottom: '1px dashed var(--border)' }}>
-                            <input
-                              type="checkbox"
-                              checked={customerHotmails.includes(acc.email)}
-                              onChange={() => toggleCustomerHotmailSelection(acc.email)}
-                            />
-                            <span style={{ wordBreak: 'break-all' }}>{acc.email}</span>
-                          </label>
-                        ))
-                    )}
-                  </div>
+                  <textarea
+                    placeholder={`Paste hotmail emails, one per line:\n\nexample1@hotmail.com\nexample2@hotmail.com\nexample3@hotmail.com`}
+                    value={customerHotmailsText}
+                    onChange={(e) => setCustomerHotmailsText(e.target.value)}
+                    rows={8}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      fontSize: '0.83rem',
+                      fontFamily: 'monospace',
+                      border: '1px solid var(--border-strong)',
+                      borderRadius: '8px',
+                      backgroundColor: 'var(--bg-dark)',
+                      color: 'var(--text-main)',
+                      resize: 'vertical',
+                      lineHeight: '1.6',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  {customerHotmails.length > 0 && (
+                    <div style={{ marginTop: '6px', fontSize: '0.75rem', color: 'var(--accent)', fontWeight: '600' }}>
+                      ✓ {customerHotmails.length} email{customerHotmails.length !== 1 ? 's' : ''} ready
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                   <button
