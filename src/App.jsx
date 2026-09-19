@@ -695,10 +695,7 @@ export default function App() {
             <div style={{ marginBottom: '16px', padding: '14px', backgroundColor: 'rgba(16,185,129,0.06)', borderRadius: '12px', border: '1px solid rgba(16,185,129,0.12)' }}>
               <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.05em', marginBottom: '4px' }}>Target Account</div>
               <div style={{ fontSize: '0.88rem', fontWeight: '600', color: 'var(--text-main)', wordBreak: 'break-all', marginBottom: '10px' }}>{clientShareInfo?.hotmailEmail}</div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.05em', marginBottom: '4px' }}>Subject Filter</div>
-              <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#059669', padding: '3px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: '700' }}>
-                "{clientShareInfo?.subjectQuery}"
-              </span>
+
             </div>
 
             {/* Inbox header */}
