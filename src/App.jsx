@@ -1102,7 +1102,7 @@ export default function App() {
                     />
                     <input
                       type="text"
-                      placeholder="Search pasted hotmails..."
+                      placeholder="Search inside pasted hotmails..."
                       value={customerHotmailSearch}
                       onChange={(e) => setCustomerHotmailSearch(e.target.value)}
                       style={{
@@ -1127,10 +1127,8 @@ export default function App() {
                           position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)',
                           fontSize: '0.7rem', fontWeight: '700',
                           backgroundColor: matchCount > 0 ? 'var(--accent)' : 'var(--danger)',
-                          color: 'white',
-                          borderRadius: '10px',
-                          padding: '2px 7px',
-                          lineHeight: '1.4'
+                          color: 'white', borderRadius: '10px',
+                          padding: '2px 7px', lineHeight: '1.4'
                         }}>
                           {matchCount} match{matchCount !== 1 ? 'es' : ''}
                         </span>
@@ -1138,75 +1136,102 @@ export default function App() {
                     })()}
                   </div>
 
-                  {/* Live search results — shown only when searching */}
-                  {customerHotmailSearch && customerHotmails.length > 0 && (
-                    <div style={{
-                      marginBottom: '8px',
-                      border: '1px solid var(--border-strong)',
-                      borderRadius: '8px',
-                      backgroundColor: 'var(--bg-dark)',
-                      maxHeight: '160px',
-                      overflowY: 'auto',
-                      padding: '6px 0'
-                    }}>
-                      {customerHotmails.map((em, idx) => {
-                        const q = customerHotmailSearch.toLowerCase();
-                        const match = em.toLowerCase().includes(q);
-                        if (!match) return null;
-                        const i = em.toLowerCase().indexOf(q);
-                        return (
-                          <div
-                            key={idx}
-                            style={{
-                              padding: '5px 12px',
-                              fontSize: '0.8rem',
-                              fontFamily: 'monospace',
-                              color: 'var(--text-main)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              borderBottom: idx < customerHotmails.length - 1 ? '1px solid var(--border)' : 'none'
-                            }}
-                          >
-                            <CheckCircle2 size={12} color="var(--accent)" style={{ flexShrink: 0 }} />
-                            <span>
-                              {em.slice(0, i)}
-                              <mark style={{ backgroundColor: 'rgba(16,185,129,0.3)', color: 'var(--accent)', fontWeight: '700', borderRadius: '2px', padding: '0 1px' }}>
-                                {em.slice(i, i + q.length)}
-                              </mark>
-                              {em.slice(i + q.length)}
-                            </span>
-                          </div>
-                        );
-                      })}
-                      {customerHotmails.filter(em => em.toLowerCase().includes(customerHotmailSearch.toLowerCase())).length === 0 && (
-                        <div style={{ padding: '10px 12px', fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center' }}>
-                          No matching emails found
-                        </div>
-                      )}
+                  {/* ── Overlay highlight textarea ── */}
+                  {/* The backdrop div mirrors the textarea content and renders highlighted HTML.
+                      The real textarea sits on top with transparent background so the
+                      coloured highlights shine through while text remains fully editable. */}
+                  <div style={{ position: 'relative', borderRadius: '8px', overflow: 'hidden' }}>
+                    {/* Highlight backdrop */}
+                    <div
+                      aria-hidden="true"
+                      style={{
+                        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                        padding: '10px 12px',
+                        fontSize: '0.83rem',
+                        fontFamily: 'monospace',
+                        lineHeight: '1.6',
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-all',
+                        overflowY: 'auto',
+                        pointerEvents: 'none',
+                        color: 'transparent',
+                        boxSizing: 'border-box',
+                        borderRadius: '8px',
+                        backgroundColor: 'var(--bg-dark)',
+                      }}
+                    >
+                      {customerHotmailSearch
+                        ? customerHotmailsText.split('\n').map((line, lineIdx, arr) => {
+                            const q = customerHotmailSearch.toLowerCase();
+                            const trimmed = line.trim();
+                            const isMatch = trimmed.length > 0 && trimmed.toLowerCase().includes(q);
+                            if (!isMatch) {
+                              return (
+                                <span key={lineIdx}>
+                                  {line}{lineIdx < arr.length - 1 ? '\n' : ''}
+                                </span>
+                              );
+                            }
+                            // Highlight every occurrence on the line
+                            const parts = [];
+                            let rest = line;
+                            let offset = 0;
+                            while (true) {
+                              const idx = rest.toLowerCase().indexOf(q);
+                              if (idx === -1) { parts.push(<span key={offset}>{rest}</span>); break; }
+                              if (idx > 0) parts.push(<span key={offset}>{rest.slice(0, idx)}</span>);
+                              parts.push(
+                                <mark key={offset + 1} style={{
+                                  backgroundColor: 'rgba(16,185,129,0.35)',
+                                  color: 'transparent',
+                                  borderRadius: '2px',
+                                  outline: '1px solid rgba(16,185,129,0.6)'
+                                }}>
+                                  {rest.slice(idx, idx + q.length)}
+                                </mark>
+                              );
+                              rest = rest.slice(idx + q.length);
+                              offset += idx + q.length;
+                            }
+                            return (
+                              <span key={lineIdx} style={{
+                                backgroundColor: 'rgba(16,185,129,0.08)',
+                                display: 'inline',
+                              }}>
+                                {parts}{lineIdx < arr.length - 1 ? '\n' : ''}
+                              </span>
+                            );
+                          })
+                        : customerHotmailsText
+                      }
                     </div>
-                  )}
 
-                  <textarea
-                    placeholder={`example1@hotmail.com\nexample2@hotmail.com\nexample3@hotmail.com`}
-                    value={customerHotmailsText}
-                    onChange={(e) => setCustomerHotmailsText(e.target.value)}
-                    rows={8}
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      fontSize: '0.83rem',
-                      fontFamily: 'monospace',
-                      border: '1px solid var(--border-strong)',
-                      borderRadius: '8px',
-                      backgroundColor: 'var(--bg-dark)',
-                      color: 'var(--text-main)',
-                      resize: 'vertical',
-                      lineHeight: '1.6',
-                      outline: 'none',
-                      boxSizing: 'border-box'
-                    }}
-                  />
+                    {/* Real editable textarea — transparent so highlights show through */}
+                    <textarea
+                      placeholder={`example1@hotmail.com\nexample2@hotmail.com\nexample3@hotmail.com`}
+                      value={customerHotmailsText}
+                      onChange={(e) => setCustomerHotmailsText(e.target.value)}
+                      rows={8}
+                      style={{
+                        position: 'relative',
+                        width: '100%',
+                        padding: '10px 12px',
+                        fontSize: '0.83rem',
+                        fontFamily: 'monospace',
+                        border: `1px solid ${customerHotmailSearch ? 'var(--accent)' : 'var(--border-strong)'}`,
+                        borderRadius: '8px',
+                        backgroundColor: 'transparent',
+                        color: 'var(--text-main)',
+                        caretColor: 'var(--text-main)',
+                        resize: 'vertical',
+                        lineHeight: '1.6',
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                        display: 'block',
+                        transition: 'border-color 0.2s'
+                      }}
+                    />
+                  </div>
                   {customerHotmails.length > 0 && (
                     <div style={{ marginTop: '6px', fontSize: '0.75rem', color: 'var(--accent)', fontWeight: '600' }}>
                       ✓ {customerHotmails.length} email{customerHotmails.length !== 1 ? 's' : ''} ready
