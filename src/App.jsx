@@ -156,6 +156,7 @@ export default function App() {
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [customerMobileTab, setCustomerMobileTab] = useState('form');
   const [shareMobileTab, setShareMobileTab] = useState('form');
+  const [customerHotmailSearch, setCustomerHotmailSearch] = useState('');
 
   // Client Portal specific state
   const [isSecurityVerified, setIsSecurityVerified] = useState(false);
@@ -1084,13 +1085,108 @@ export default function App() {
                     {customerHotmailsText.length > 0 && (
                       <button
                         type="button"
-                        onClick={() => setCustomerHotmailsText('')}
+                        onClick={() => { setCustomerHotmailsText(''); setCustomerHotmailSearch(''); }}
                         style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
                       >
                         Clear
                       </button>
                     )}
                   </div>
+
+                  {/* ── Search bar for pasted hotmails ── */}
+                  <div style={{ position: 'relative', marginBottom: '8px' }}>
+                    <Search
+                      size={14}
+                      color="var(--text-muted)"
+                      style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Search pasted hotmails..."
+                      value={customerHotmailSearch}
+                      onChange={(e) => setCustomerHotmailSearch(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '8px 10px 8px 32px',
+                        fontSize: '0.82rem',
+                        border: '1px solid var(--border-strong)',
+                        borderRadius: '8px',
+                        backgroundColor: 'var(--bg-dark)',
+                        color: 'var(--text-main)',
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                        transition: 'border-color 0.2s'
+                      }}
+                      onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+                      onBlur={e => e.target.style.borderColor = 'var(--border-strong)'}
+                    />
+                    {customerHotmailSearch && (() => {
+                      const matchCount = customerHotmails.filter(em => em.toLowerCase().includes(customerHotmailSearch.toLowerCase())).length;
+                      return (
+                        <span style={{
+                          position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)',
+                          fontSize: '0.7rem', fontWeight: '700',
+                          backgroundColor: matchCount > 0 ? 'var(--accent)' : 'var(--danger)',
+                          color: 'white',
+                          borderRadius: '10px',
+                          padding: '2px 7px',
+                          lineHeight: '1.4'
+                        }}>
+                          {matchCount} match{matchCount !== 1 ? 'es' : ''}
+                        </span>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Live search results — shown only when searching */}
+                  {customerHotmailSearch && customerHotmails.length > 0 && (
+                    <div style={{
+                      marginBottom: '8px',
+                      border: '1px solid var(--border-strong)',
+                      borderRadius: '8px',
+                      backgroundColor: 'var(--bg-dark)',
+                      maxHeight: '160px',
+                      overflowY: 'auto',
+                      padding: '6px 0'
+                    }}>
+                      {customerHotmails.map((em, idx) => {
+                        const q = customerHotmailSearch.toLowerCase();
+                        const match = em.toLowerCase().includes(q);
+                        if (!match) return null;
+                        const i = em.toLowerCase().indexOf(q);
+                        return (
+                          <div
+                            key={idx}
+                            style={{
+                              padding: '5px 12px',
+                              fontSize: '0.8rem',
+                              fontFamily: 'monospace',
+                              color: 'var(--text-main)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              borderBottom: idx < customerHotmails.length - 1 ? '1px solid var(--border)' : 'none'
+                            }}
+                          >
+                            <CheckCircle2 size={12} color="var(--accent)" style={{ flexShrink: 0 }} />
+                            <span>
+                              {em.slice(0, i)}
+                              <mark style={{ backgroundColor: 'rgba(16,185,129,0.3)', color: 'var(--accent)', fontWeight: '700', borderRadius: '2px', padding: '0 1px' }}>
+                                {em.slice(i, i + q.length)}
+                              </mark>
+                              {em.slice(i + q.length)}
+                            </span>
+                          </div>
+                        );
+                      })}
+                      {customerHotmails.filter(em => em.toLowerCase().includes(customerHotmailSearch.toLowerCase())).length === 0 && (
+                        <div style={{ padding: '10px 12px', fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+                          No matching emails found
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <textarea
                     placeholder={`example1@hotmail.com\nexample2@hotmail.com\nexample3@hotmail.com`}
                     value={customerHotmailsText}
