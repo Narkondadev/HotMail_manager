@@ -130,6 +130,10 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // Refs for hotmail paste-box overlay highlight scroll sync
+  const hotmailTextareaRef = useRef(null);
+  const hotmailBackdropRef = useRef(null);
+
   // --- OTP SHARE STATE VARIABLES ---
   const isClientPortal = window.location.pathname === '/users';
   const isAdminLoginPath = window.location.pathname === '/login';
@@ -1137,12 +1141,10 @@ export default function App() {
                   </div>
 
                   {/* ── Overlay highlight textarea ── */}
-                  {/* The backdrop div mirrors the textarea content and renders highlighted HTML.
-                      The real textarea sits on top with transparent background so the
-                      coloured highlights shine through while text remains fully editable. */}
-                  <div style={{ position: 'relative', borderRadius: '8px', overflow: 'hidden' }}>
-                    {/* Highlight backdrop */}
+                  <div style={{ position: 'relative', borderRadius: '8px' }}>
+                    {/* Highlight backdrop — scrolls in sync with the textarea via ref */}
                     <div
+                      ref={hotmailBackdropRef}
                       aria-hidden="true"
                       style={{
                         position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
@@ -1152,7 +1154,7 @@ export default function App() {
                         lineHeight: '1.6',
                         whiteSpace: 'pre-wrap',
                         wordBreak: 'break-all',
-                        overflowY: 'auto',
+                        overflowY: 'hidden',
                         pointerEvents: 'none',
                         color: 'transparent',
                         boxSizing: 'border-box',
@@ -1206,11 +1208,17 @@ export default function App() {
                       }
                     </div>
 
-                    {/* Real editable textarea — transparent so highlights show through */}
+                    {/* Real editable textarea — transparent bg so highlights show through */}
                     <textarea
+                      ref={hotmailTextareaRef}
                       placeholder={`example1@hotmail.com\nexample2@hotmail.com\nexample3@hotmail.com`}
                       value={customerHotmailsText}
                       onChange={(e) => setCustomerHotmailsText(e.target.value)}
+                      onScroll={() => {
+                        if (hotmailBackdropRef.current && hotmailTextareaRef.current) {
+                          hotmailBackdropRef.current.scrollTop = hotmailTextareaRef.current.scrollTop;
+                        }
+                      }}
                       rows={8}
                       style={{
                         position: 'relative',
