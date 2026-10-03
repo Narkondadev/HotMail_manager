@@ -1125,7 +1125,12 @@ export default function App() {
                       onBlur={e => e.target.style.borderColor = 'var(--border-strong)'}
                     />
                     {customerHotmailSearch && (() => {
-                      const matchCount = customerHotmails.filter(em => em.toLowerCase().includes(customerHotmailSearch.toLowerCase())).length;
+                      const terms = customerHotmailSearch.toLowerCase().split(/[\s,]+/).filter(Boolean);
+                      if (terms.length === 0) return null;
+                      const matchCount = customerHotmails.filter(em => {
+                        const emLower = em.toLowerCase();
+                        return terms.some(t => emLower.includes(t));
+                      }).length;
                       return (
                         <span style={{
                           position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)',
@@ -1163,47 +1168,51 @@ export default function App() {
                       }}
                     >
                       {customerHotmailSearch
-                        ? customerHotmailsText.split('\n').map((line, lineIdx, arr) => {
-                            const q = customerHotmailSearch.toLowerCase();
-                            const trimmed = line.trim();
-                            const isMatch = trimmed.length > 0 && trimmed.toLowerCase().includes(q);
-                            if (!isMatch) {
+                        ? (() => {
+                            const terms = customerHotmailSearch.toLowerCase().split(/[\s,]+/).filter(Boolean);
+                            if (terms.length === 0) return customerHotmailsText;
+                            const escapedTerms = terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+                            const regex = new RegExp(`(${escapedTerms.join('|')})`, 'gi');
+
+                            return customerHotmailsText.split('\n').map((line, lineIdx, arr) => {
+                              const lowerLine = line.toLowerCase();
+                              const isMatch = terms.some(t => lowerLine.includes(t));
+                              
+                              if (!isMatch) {
+                                return (
+                                  <span key={lineIdx}>
+                                    {line}{lineIdx < arr.length - 1 ? '\n' : ''}
+                                  </span>
+                                );
+                              }
+
+                              const parts = line.split(regex);
                               return (
-                                <span key={lineIdx}>
-                                  {line}{lineIdx < arr.length - 1 ? '\n' : ''}
+                                <span key={lineIdx} style={{
+                                  backgroundColor: 'rgba(16,185,129,0.08)',
+                                  display: 'inline',
+                                }}>
+                                  {parts.map((part, i) => {
+                                    if (i % 2 === 1) {
+                                      // Matched term (odd indices from regex capturing group)
+                                      return (
+                                        <mark key={i} style={{
+                                          backgroundColor: 'rgba(16,185,129,0.35)',
+                                          color: 'transparent',
+                                          borderRadius: '2px',
+                                          outline: '1px solid rgba(16,185,129,0.6)'
+                                        }}>
+                                          {part}
+                                        </mark>
+                                      );
+                                    }
+                                    return <span key={i}>{part}</span>;
+                                  })}
+                                  {lineIdx < arr.length - 1 ? '\n' : ''}
                                 </span>
                               );
-                            }
-                            // Highlight every occurrence on the line
-                            const parts = [];
-                            let rest = line;
-                            let offset = 0;
-                            while (true) {
-                              const idx = rest.toLowerCase().indexOf(q);
-                              if (idx === -1) { parts.push(<span key={offset}>{rest}</span>); break; }
-                              if (idx > 0) parts.push(<span key={offset}>{rest.slice(0, idx)}</span>);
-                              parts.push(
-                                <mark key={offset + 1} style={{
-                                  backgroundColor: 'rgba(16,185,129,0.35)',
-                                  color: 'transparent',
-                                  borderRadius: '2px',
-                                  outline: '1px solid rgba(16,185,129,0.6)'
-                                }}>
-                                  {rest.slice(idx, idx + q.length)}
-                                </mark>
-                              );
-                              rest = rest.slice(idx + q.length);
-                              offset += idx + q.length;
-                            }
-                            return (
-                              <span key={lineIdx} style={{
-                                backgroundColor: 'rgba(16,185,129,0.08)',
-                                display: 'inline',
-                              }}>
-                                {parts}{lineIdx < arr.length - 1 ? '\n' : ''}
-                              </span>
-                            );
-                          })
+                            });
+                          })()
                         : customerHotmailsText
                       }
                     </div>
