@@ -747,7 +747,7 @@ app.post('/api/customers/emails', async (req, res) => {
                 const bodyLower = (m.bodyPreview || '').toLowerCase();
                 return subjectQueries.some(q => subLower.includes(q) || bodyLower.includes(q));
             });
-            if (matching.length > 0) filteredMessages = matching;
+            filteredMessages = matching;
         }
 
         res.json(filteredMessages);
