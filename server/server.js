@@ -658,7 +658,7 @@ app.post('/api/customers/unlock-inbox', async (req, res) => {
                 const bodyLower = (m.bodyPreview || '').toLowerCase();
                 return subjectQueries.some(q => subLower.includes(q) || bodyLower.includes(q));
             });
-            if (matching.length > 0) filteredMessages = matching;
+            filteredMessages = matching;
         }
 
         const displayFilter = matchingShares.length > 0
