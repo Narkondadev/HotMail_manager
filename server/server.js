@@ -642,23 +642,23 @@ app.post('/api/customers/unlock-inbox', async (req, res) => {
             ).catch(() => { });
         }
 
-        // Apply subject filters in-memory (zero extra API calls)
-        let rawQuery = shareOtp.trim();
-        let subjectQueries = [];
-        if (matchingShares && matchingShares.length > 0) {
-            subjectQueries = matchingShares.map(s => s.subjectQuery.trim().toLowerCase()).filter(Boolean);
-        } else if (rawQuery && rawQuery.toLowerCase() !== customerOtp.trim().toLowerCase()) {
-            subjectQueries = [rawQuery.toLowerCase()];
+        // ✅ SECURITY: Reject if shareOtp does not match any active Share in DB
+        if (!matchingShares || matchingShares.length === 0) {
+            return res.status(403).json({ error: 'Invalid or inactive Share OTP. Access denied.' });
         }
+
+        // Apply subject filters in-memory (zero extra API calls)
+        const subjectQueries = matchingShares
+            .map(s => s.subjectQuery.trim().toLowerCase())
+            .filter(Boolean);
 
         let filteredMessages = allMessages;
         if (subjectQueries.length > 0) {
-            const matching = allMessages.filter(m => {
+            filteredMessages = allMessages.filter(m => {
                 const subLower = (m.subject || '').toLowerCase();
                 const bodyLower = (m.bodyPreview || '').toLowerCase();
                 return subjectQueries.some(q => subLower.includes(q) || bodyLower.includes(q));
             });
-            filteredMessages = matching;
         }
 
         const displayFilter = matchingShares.length > 0
